@@ -22,7 +22,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // --- MODO SIMULAÇÃO (PARA NÃO DAR ERRO AQUI NO CHAT) ---
 // COMENTE OU APAGUE ESTE BLOCO INTEIRO QUANDO FOR SUBIR PARA O VERCEL
-const supabase = {
+// const supabase = {
     from: (table) => ({
         select: async (query = '*') => {
             console.warn(`[MOCK] Select em ${table}`);
@@ -1029,5 +1029,6 @@ const App = () => {
 };
 
 export default App;
+
 
 
