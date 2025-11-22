@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
   Printer, Check, Search, FileText, ChevronRight, Filter,
@@ -6,91 +7,24 @@ import {
 } from 'lucide-react';
 
 // =========================================================
-// --- 1. CONFIGURAÇÃO SUPABASE (Ajustar com seus dados) ---
+// --- 1. CONFIGURAÇÃO SUPABASE (REAL) ---
 // =========================================================
-// O Vercel lida com variáveis de ambiente. Em um projeto real, esses valores viriam de process.env
-// ATENÇÃO: Substitua 'SUA_SUPABASE_URL_AQUI' e 'SUA_CHAVE_ANON_PUBLIC_AQUI' pelas suas chaves reais
-const SUPABASE_URL = 'SUA_SUPABASE_URL_AQUI'; // Ex: 'https://abcdefghijk.supabase.co'
-const SUPABASE_ANON_KEY = 'SUA_CHAVE_ANON_PUBLIC_AQUI'; // Chave pública do Supabase
+const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// Implementação simples do Supabase (MOCK para rodar no navegador)
-// EM PRODUÇÃO, esta seção seria substituída pela biblioteca @supabase/supabase-js
-const supabase = {
-    from: (table) => ({
-        select: async (query = '*') => {
-            if (SUPABASE_URL.includes('SUA_')) {
-                console.error("ERRO: Configure SUPABASE_URL e SUPABASE_ANON_KEY no topo do arquivo!");
-                return { data: JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]'), error: null };
-            }
-            console.warn(`Simulando chamada Supabase (SELECT). Tabela: ${table}, Query: ${query}`);
-            return { data: JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]'), error: null };
-        },
-        insert: async (records) => {
-            if (SUPABASE_URL.includes('SUA_')) {
-                const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
-                const newRecords = Array.isArray(records) ? records : [records];
-                newRecords.forEach(r => r.id = r.id || crypto.randomUUID());
-                localStorage.setItem(`temp_conf_${table}`, JSON.stringify([...current, ...newRecords]));
-                return { data: newRecords, error: null };
-            }
-            return { data: Array.isArray(records) ? records : [records], error: null };
-        },
-        update: async (changes, id) => { // MOCK simplificado, assume 'id' para busca
-            if (SUPABASE_URL.includes('SUA_')) {
-                const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
-                const updated = current.map(item => item.id === id ? { ...item, ...changes } : item);
-                localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
-                return { data: updated.find(i => i.id === id), error: null };
-            }
-            return { data: changes, error: null };
-        },
-        delete: async (id) => {
-            if (SUPABASE_URL.includes('SUA_')) {
-                const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
-                const updated = current.filter(item => item.id !== id);
-                localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
-                return { data: { id }, error: null };
-            }
-            return { data: { id }, error: null };
-        },
-        eq: () => ({ select: async () => ({ data: [], error: null }) })
-    }),
-    auth: {
-        signInWithPassword: async ({ email, password }) => {
-            if (email === 'gustavo_benvindo80@hotmail.com' && password === 'Gustavor80') {
-                return { user: { id: 'admin-id', email, role: 'admin', name: 'Gustavo Admin' }, error: null };
-            }
-            // MOCK: Busca nos Representantes cadastrados
-            const allUsers = JSON.parse(localStorage.getItem('temp_conf_users') || '[]');
-            const user = allUsers.find(u => u.username === email && u.password === password);
-            
-            if (user) {
-                return { user: { id: user.id, email: user.username, role: 'rep', name: user.name }, error: null };
-            }
-            return { user: null, error: { message: 'Credenciais inválidas.' } };
-        },
-        signOut: async () => {
-            return { error: null };
-        }
-    }
-};
+// Inicializa a conexão real com o Banco de Dados
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================
-// --- 2. CONSTANTES E CONFIGURAÇÕES DE GRADE ---
+// --- 2. CONSTANTES ---
 // =========================================================
 
 const ALL_SIZES = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
 const SIZES_STD = ['P', 'M', 'G', 'GG'];
 const SIZES_PLUS = ['G1', 'G2', 'G3'];
 
-// Simulação DB Local (usado para MOCK quando SUPABASE_URL não é configurada)
-const db = {
-  get: (key) => JSON.parse(localStorage.getItem(`temp_conf_${key}`) || '[]'),
-  set: (key, data) => localStorage.setItem(`temp_conf_${key}`, JSON.stringify(data)),
-};
-
 // =========================================================
-// --- 3. COMPONENTES UI REUTILIZÁVEIS ---
+// --- 3. COMPONENTES UI ---
 // =========================================================
 
 const Card = ({ children, className = '' }) => (
@@ -144,18 +78,28 @@ const LoginScreen = ({ onLogin }) => {
     setIsLoading(true);
 
     try {
-        // MOCK de Supabase Auth
-        const { user, error } = await supabase.auth.signInWithPassword({ email, password });
+        // 1. Verifica se é o Admin
+        if (email === 'gustavo_benvindo80@hotmail.com' && password === 'Gustavor80') {
+            onLogin({ id: 'admin-id', email, role: 'admin', name: 'Gustavo Admin' });
+            return;
+        }
+
+        // 2. Verifica se é Representante (tabela 'users')
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', email)
+            .eq('password', password) // Nota: Em produção real, use hash de senha
+            .single();
         
-        if (error) {
-            setError(error.message);
-        } else if (user) {
-            onLogin(user);
+        if (error || !data) {
+            setError('Usuário ou senha inválidos.');
         } else {
-            setError('Usuário ou senha inválidos. (Verifique as chaves SUPABASE se este erro persistir)');
+            onLogin({ id: data.id, email: data.username, role: 'rep', name: data.name });
         }
     } catch (e) {
-        setError('Ocorreu um erro na conexão. Verifique o console.');
+        setError('Erro de conexão. Verifique sua internet.');
+        console.error(e);
     } finally {
         setIsLoading(false);
     }
@@ -170,26 +114,20 @@ const LoginScreen = ({ onLogin }) => {
             label="Usuário / Email" 
             value={email} 
             onChange={e => setEmail(e.target.value)} 
-            placeholder="gustavo_benvindo80@hotmail.com ou usuário do Rep"
+            placeholder="Seu usuário de acesso"
           />
           <Input 
             label="Senha" 
             type="password" 
             value={password} 
             onChange={e => setPassword(e.target.value)} 
-            placeholder="Senha de acesso"
+            placeholder="Sua senha"
           />
           {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? 'Carregando...' : 'Entrar'}
           </Button>
         </form>
-        {SUPABASE_URL.includes('SUA_') && (
-            <div className="mt-4 p-3 bg-yellow-100 border border-yellow-400 rounded text-sm">
-                <p className="font-bold text-yellow-800">ATENÇÃO:</p>
-                <p className="text-yellow-700">O sistema está rodando em MOCK (localStorage/simulação). Edite as variáveis SUPABASE_URL/SUPABASE_ANON_KEY no topo para conectar ao banco real.</p>
-            </div>
-        )}
       </Card>
     </div>
   );
@@ -207,20 +145,22 @@ const DashboardStats = ({ orders, title }) => {
     const refColors = {}; 
 
     orders.forEach(order => {
-      // Garantir que order.items é um array, mesmo que venha como string JSON (Supabase)
-      const items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+      // Garante que items é um array (parseia se for string JSONB)
+      const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
 
-      items.forEach(item => {
-        const itemTotal = Object.values(item.qtd).reduce((a, b) => a + Number(b), 0);
-        totalItems += itemTotal;
-        
-        if (!refSales[item.ref]) refSales[item.ref] = 0;
-        refSales[item.ref] += itemTotal;
+      if(Array.isArray(items)){
+          items.forEach(item => {
+            const itemTotal = Object.values(item.qtd).reduce((a, b) => a + Number(b), 0);
+            totalItems += itemTotal;
+            
+            if (!refSales[item.ref]) refSales[item.ref] = 0;
+            refSales[item.ref] += itemTotal;
 
-        const key = `${item.ref} - ${item.color}`;
-        if (!refColors[key]) refColors[key] = 0;
-        refColors[key] += itemTotal;
-      });
+            const key = `${item.ref} - ${item.color}`;
+            if (!refColors[key]) refColors[key] = 0;
+            refColors[key] += itemTotal;
+          });
+      }
     });
 
     const topRefs = Object.entries(refSales)
@@ -321,33 +261,30 @@ const AdminDashboard = () => {
   const [view, setView] = useState('dashboard');
   const [selectedOrdersForReport, setSelectedOrdersForReport] = useState([]);
   
-  // Estados para Relatórios Avançados
   const [reportRef, setReportRef] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  // Estados para formulários de cadastro
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [newProd, setNewProd] = useState({ ref: '', color: '', grade: 'STD' });
 
-  // --- Funções de Carregamento (Substituindo db.get por Supabase/MOCK) ---
+  // --- Carregamento de Dados (SUPABASE) ---
   const fetchAllData = useCallback(async () => {
-    // Busca Representantes
+    // Busca Usuários
     const { data: usersData } = await supabase.from('users').select('*');
     setUsers(usersData || []);
 
-    // Busca Catálogo
+    // Busca Produtos
     const { data: productsData } = await supabase.from('products').select('*');
     setProducts(productsData || []);
 
-    // Busca Pedidos (E parseia o JSONB items)
+    // Busca Pedidos
     const { data: ordersData } = await supabase.from('orders').select('*');
+    // Converte o JSONB de items para objeto JS
     const parsedOrders = (ordersData || []).map(order => ({
         ...order,
-        // JSON.parse é CRÍTICO aqui para converter a string JSONB/TEXT do banco em Array JS
-        items: Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]')
+        items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
     }));
     setOrders(parsedOrders);
-
   }, []);
 
   useEffect(() => {
@@ -355,59 +292,47 @@ const AdminDashboard = () => {
   }, [fetchAllData, view]);
 
 
-  // --- Lógica de Usuários (Supabase/MOCK) ---
+  // --- Ações do Admin ---
   const addUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) return alert('Preencha todos os campos');
     
-    const userToInsert = { ...newUser, id: crypto.randomUUID() }; 
-    const { error } = await supabase.from('users').insert(userToInsert);
-    
+    const { error } = await supabase.from('users').insert(newUser);
     if (error) {
-        alert('Erro ao cadastrar representante.');
+        alert('Erro ao cadastrar: ' + error.message);
     } else {
+        alert('Representante cadastrado!');
         fetchAllData(); 
         setNewUser({ name: '', username: '', password: '' });
     }
   };
 
   const removeUser = async (id) => {
-    if (confirm('Tem certeza? Isso não pode ser desfeito.')) {
-      const { error } = await supabase.from('users').delete(id); 
-      if (error) {
-          alert('Erro ao deletar representante.');
-      } else {
-          fetchAllData(); 
-      }
+    if (confirm('Tem certeza? Isso apagará o representante.')) {
+      const { error } = await supabase.from('users').delete().eq('id', id); 
+      if (error) alert('Erro ao deletar: ' + error.message);
+      else fetchAllData(); 
     }
   };
 
-  // --- Lógica de Produtos (Supabase/MOCK) ---
   const addProduct = async () => {
     if (!newProd.ref || !newProd.color) return alert('Preencha referência e cor');
-    const exists = products.find(p => p.ref === newProd.ref && p.color === newProd.color && p.grade === newProd.grade);
-    if (exists) return alert('Produto já cadastrado no catálogo');
-
-    const productToInsert = { ...newProd, id: crypto.randomUUID() };
-    const { error } = await supabase.from('products').insert(productToInsert);
     
+    const { error } = await supabase.from('products').insert(newProd);
     if (error) {
-        alert('Erro ao adicionar produto.');
+        alert('Erro ao adicionar produto (talvez já exista essa combinação).');
     } else {
+        alert('Produto adicionado!');
         fetchAllData();
         setNewProd({ ...newProd, color: '' }); 
     }
   };
 
   const removeProduct = async (id) => {
-    const { error } = await supabase.from('products').delete(id); 
-    if (error) {
-        alert('Erro ao deletar produto.');
-    } else {
-        fetchAllData();
-    }
+    const { error } = await supabase.from('products').delete().eq('id', id); 
+    if (error) alert('Erro ao deletar produto.');
+    else fetchAllData();
   };
 
-  // --- Lógica de Gestão de Pedidos (Seleção Manual) ---
   const toggleOrderSelection = (orderId) => {
     if (selectedOrdersForReport.includes(orderId)) {
       setSelectedOrdersForReport(selectedOrdersForReport.filter(id => id !== orderId));
@@ -417,32 +342,33 @@ const AdminDashboard = () => {
   };
 
   const markAsPrinted = async (orderIds) => {
+    // Atualiza status no Supabase
     const promises = orderIds.map(id => 
-        supabase.from('orders').update({ status: 'Impresso' }, id) // MOCK update
+        supabase.from('orders').update({ status: 'Impresso' }).eq('id', id)
     );
     await Promise.all(promises);
     fetchAllData();
   };
 
-  // --- LÓGICA DE RELATÓRIOS AVANÇADOS ---
-  
+  // --- Relatórios ---
   const refAnalysis = useMemo(() => {
       if(!reportRef) return [];
       const stats = {};
       orders.forEach(o => {
-          o.items.forEach(i => {
-              if(i.ref === reportRef) {
-                  if(!stats[i.color]) stats[i.color] = 0;
-                  stats[i.color] += Object.values(i.qtd).reduce((a,b)=>a+Number(b),0);
-              }
-          });
+          if(Array.isArray(o.items)) {
+              o.items.forEach(i => {
+                  if(i.ref === reportRef) {
+                      if(!stats[i.color]) stats[i.color] = 0;
+                      stats[i.color] += Object.values(i.qtd).reduce((a,b)=>a+Number(b),0);
+                  }
+              });
+          }
       });
       return Object.entries(stats).sort(([,a], [,b]) => b - a);
   }, [orders, reportRef]);
 
   const dateRangeConsolidated = useMemo(() => {
       if(!dateRange.start || !dateRange.end) return null;
-      
       const start = new Date(dateRange.start + 'T00:00:00');
       const end = new Date(dateRange.end + 'T23:59:59');
       
@@ -452,22 +378,21 @@ const AdminDashboard = () => {
       });
 
       const consolidation = {}; 
-
       filteredOrders.forEach(order => {
-        order.items.forEach(item => {
-          const key = `${item.ref}#${item.color}`;
-          if (!consolidation[key]) {
-            consolidation[key] = { ref: item.ref, color: item.color, sizes: { P:0, M:0, G:0, GG:0, G1:0, G2:0, G3:0 } };
-          }
-          
-          Object.keys(item.qtd).forEach(size => {
-             if(consolidation[key].sizes[size] !== undefined) {
-                 consolidation[key].sizes[size] += Number(item.qtd[size]);
-             }
-          });
-        });
+        if(Array.isArray(order.items)) {
+            order.items.forEach(item => {
+              const key = `${item.ref}#${item.color}`;
+              if (!consolidation[key]) {
+                consolidation[key] = { ref: item.ref, color: item.color, sizes: { P:0, M:0, G:0, GG:0, G1:0, G2:0, G3:0 } };
+              }
+              Object.keys(item.qtd).forEach(size => {
+                 if(consolidation[key].sizes[size] !== undefined) {
+                     consolidation[key].sizes[size] += Number(item.qtd[size]);
+                 }
+              });
+            });
+        }
       });
-
       return Object.values(consolidation).sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
   }, [orders, dateRange]);
 
@@ -573,7 +498,6 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* GESTÃO DE PEDIDOS (IMPRESSÃO MANUAL) */}
       {view === 'orders' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center print:hidden">
@@ -692,110 +616,60 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* ABA: RELATÓRIOS AVANÇADOS */}
       {view === 'reports' && (
           <div className="space-y-8">
               <h2 className="text-2xl font-bold">Relatórios Avançados</h2>
-
-              {/* 1. Análise por Referência */}
               <Card className="border-t-4 border-blue-500">
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                      <Search size={20} className="text-blue-500"/>
-                      Análise de Cores por Referência
-                  </h3>
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Search size={20} className="text-blue-500"/> Análise de Cores por Referência</h3>
                   <div className="flex gap-4 items-end mb-6">
                       <div className="flex-1">
                           <label className="text-sm font-semibold text-gray-700">Digite a Referência</label>
-                          <input 
-                              className="border p-2 rounded w-full" 
-                              placeholder="Ex: 1050" 
-                              value={reportRef} 
-                              onChange={e => setReportRef(e.target.value)}
-                          />
+                          <input className="border p-2 rounded w-full" placeholder="Ex: 1050" value={reportRef} onChange={e => setReportRef(e.target.value)} />
                       </div>
                   </div>
-                  
                   {reportRef && refAnalysis.length > 0 && (
                       <div className="space-y-2">
-                          <h4 className="font-bold text-sm text-gray-600">Ranking de Cores (Mais vendidas):</h4>
+                          <h4 className="font-bold text-sm text-gray-600">Ranking de Cores:</h4>
                           {refAnalysis.map(([color, total], idx) => (
                               <div key={color} className="flex items-center gap-4 bg-gray-50 p-2 rounded">
                                   <span className="font-bold text-lg text-blue-600 w-8">#{idx+1}</span>
                                   <div className="flex-1">
                                       <p className="font-bold">{color}</p>
-                                      <div className="w-full bg-gray-200 h-2 rounded mt-1">
-                                          <div className="bg-blue-500 h-2 rounded" style={{ width: `${(total / refAnalysis[0][1]) * 100}%` }}></div>
-                                      </div>
+                                      <div className="w-full bg-gray-200 h-2 rounded mt-1"><div className="bg-blue-500 h-2 rounded" style={{ width: `${(total / refAnalysis[0][1]) * 100}%` }}></div></div>
                                   </div>
                                   <span className="font-bold text-gray-800">{total} pçs</span>
                               </div>
                           ))}
                       </div>
                   )}
-                  {reportRef && refAnalysis.length === 0 && <p className="text-gray-400">Nenhuma venda encontrada para esta referência.</p>}
               </Card>
-
-              {/* 2. Consolidado por Data */}
               <Card className="border-t-4 border-green-500">
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                      <Calendar size={20} className="text-green-500"/>
-                      Relatório Total de Produção por Data
-                  </h3>
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Calendar size={20} className="text-green-500"/> Relatório Total por Data</h3>
                   <div className="flex flex-wrap gap-4 items-end mb-4 print:hidden">
-                      <div>
-                          <label className="text-sm font-semibold text-gray-700 block">Data Início</label>
-                          <input type="date" className="border p-2 rounded" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})}/>
-                      </div>
-                      <div>
-                          <label className="text-sm font-semibold text-gray-700 block">Data Fim</label>
-                          <input type="date" className="border p-2 rounded" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})}/>
-                      </div>
-                      <Button variant="outline" onClick={() => window.print()}>
-                          <Printer size={18} className="mr-2"/> Imprimir Relatório
-                      </Button>
+                      <div><label className="text-sm font-semibold text-gray-700 block">Início</label><input type="date" className="border p-2 rounded" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})}/></div>
+                      <div><label className="text-sm font-semibold text-gray-700 block">Fim</label><input type="date" className="border p-2 rounded" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})}/></div>
+                      <Button variant="outline" onClick={() => window.print()}><Printer size={18} className="mr-2"/> Imprimir</Button>
                   </div>
-
                   {dateRangeConsolidated && dateRangeConsolidated.length > 0 ? (
                       <div className="overflow-x-auto">
                           <div className="print:block hidden mb-4">
-                              <h1 className="text-xl font-bold">Relatório Consolidado de Produção</h1>
+                              <h1 className="text-xl font-bold">Relatório Consolidado</h1>
                               <p>Período: {new Date(dateRange.start).toLocaleDateString()} até {new Date(dateRange.end).toLocaleDateString()}</p>
                           </div>
                           <table className="w-full text-sm text-center border">
-                              <thead className="bg-gray-800 text-white">
-                                  <tr>
-                                      <th className="p-2 text-left">Ref</th>
-                                      <th className="p-2 text-left">Cor</th>
-                                      {ALL_SIZES.map(s => <th key={s} className="p-2 w-10">{s}</th>)}
-                                      <th className="p-2 font-bold bg-gray-900">Total</th>
-                                  </tr>
-                              </thead>
+                              <thead className="bg-gray-800 text-white"><tr><th className="p-2 text-left">Ref</th><th className="p-2 text-left">Cor</th>{ALL_SIZES.map(s => <th key={s} className="p-2 w-10">{s}</th>)}<th className="p-2 font-bold bg-gray-900">Total</th></tr></thead>
                               <tbody className="divide-y">
                                   {dateRangeConsolidated.map((item, idx) => {
                                       const totalRow = Object.values(item.sizes).reduce((a,b)=>a+b,0);
-                                      return (
-                                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                              <td className="p-2 text-left font-bold">{item.ref}</td>
-                                              <td className="p-2 text-left">{item.color}</td>
-                                              {ALL_SIZES.map(s => (
-                                                  <td key={s} className="p-2 text-gray-700">
-                                                      {item.sizes[s] || '-'}
-                                                  </td>
-                                              ))}
-                                              <td className="p-2 font-bold bg-blue-100">{totalRow}</td>
-                                          </tr>
-                                      )
+                                      return (<tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="p-2 text-left font-bold">{item.ref}</td><td className="p-2 text-left">{item.color}</td>{ALL_SIZES.map(s => <td key={s} className="p-2 text-gray-700">{item.sizes[s] || '-'}</td>)}<td className="p-2 font-bold bg-blue-100">{totalRow}</td></tr>)
                                   })}
                               </tbody>
                           </table>
                       </div>
-                  ) : (
-                      <p className="text-gray-400 text-center py-4">Selecione as datas para gerar o relatório.</p>
-                  )}
+                  ) : <p className="text-gray-400 text-center py-4">Selecione as datas.</p>}
               </Card>
           </div>
       )}
-
     </div>
   );
 };
@@ -823,48 +697,34 @@ const RepDashboard = ({ user }) => {
     notes: ''
   });
 
-  const [inputLine, setInputLine] = useState({
-    ref: '',
-    grade: null, 
-    color: '',
-    qtds: { P: '', M: '', G: '', GG: '', G1: '', G2: 'r', G3: '' }
-  });
-
+  const [inputLine, setInputLine] = useState({ ref: '', grade: null, color: '', qtds: { P: '', M: '', G: '', GG: '', G1: '', G2: 'r', G3: '' } });
   const [availableColors, setAvailableColors] = useState([]);
   const [newClient, setNewClient] = useState({ name: '', city: '', neighborhood: '', state: '' });
   const [showClientModal, setShowClientModal] = useState(false);
   
-  // --- Funções de Carregamento (Substituindo db.get por Supabase/MOCK) ---
   const fetchRepData = useCallback(async () => {
-    // Busca Pedidos (Filtrado por repId - MOCK)
-    const allOrders = db.get('orders'); // MOCK: Teria que usar .eq('repId', user.id)
-    const parsedOrders = (allOrders.filter(o => o.repId === user.id)).map(order => ({
+    const { data: ordersData } = await supabase.from('orders').select('*').eq('repId', user.id);
+    const parsedOrders = (ordersData || []).map(order => ({
         ...order,
-        items: Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]')
+        items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
     }));
     setOrders(parsedOrders);
 
-    // Busca Clientes (Filtrado por repId - MOCK)
-    const allClients = db.get('clients'); // MOCK: Teria que usar .eq('repId', user.id)
-    setClients(allClients.filter(c => c.repId === user.id));
+    const { data: clientsData } = await supabase.from('clients').select('*').eq('repId', user.id);
+    setClients(clientsData || []);
     
-    // Busca Produtos (Catálogo Completo - MOCK)
     const { data: productsData } = await supabase.from('products').select('*');
     setProducts(productsData || []);
   }, [user.id]);
 
-  useEffect(() => {
-    fetchRepData();
-  }, [fetchRepData, view]);
+  useEffect(() => { fetchRepData(); }, [fetchRepData, view]);
 
-
-  // Filtragem da Lista de Pedidos
   const filteredOrders = useMemo(() => {
       if(!clientFilter) return orders;
       return orders.filter(o => o.clientName.toLowerCase().includes(clientFilter.toLowerCase()));
   }, [orders, clientFilter]);
 
-  // --- Lógica de Pedidos (Supabase/MOCK) ---
+  // Lógica de Pedidos do Representante
   const handleRefChange = (val) => {
     let detectedGrade = null;
     let colors = [];
@@ -879,16 +739,12 @@ const RepDashboard = ({ user }) => {
 
   const handleAddClient = async () => {
     if (!newClient.name) return alert('Nome obrigatório');
-    
-    const clientData = { ...newClient, id: crypto.randomUUID(), repId: user.id };
-    
-    const { error } = await supabase.from('clients').insert(clientData);
-
-    if (error) {
-        alert('Erro ao salvar cliente.');
-    } else {
-        fetchRepData(); // Recarrega clientes
-        setCurrentOrder({ ...currentOrder, clientId: clientData.id, clientName: clientData.name, clientCity: clientData.city, clientState: clientData.state, clientNeighborhood: clientData.neighborhood });
+    const clientData = { ...newClient, repId: user.id };
+    const { data, error } = await supabase.from('clients').insert(clientData).select().single();
+    if (error) { alert('Erro ao salvar cliente: ' + error.message); } 
+    else {
+        fetchRepData(); 
+        setCurrentOrder({ ...currentOrder, clientId: data.id, clientName: data.name, clientCity: data.city, clientState: data.state, clientNeighborhood: data.neighborhood });
         setShowClientModal(false);
         setNewClient({ name: '', city: '', neighborhood: '', state: '' });
     }
@@ -915,9 +771,7 @@ const RepDashboard = ({ user }) => {
     document.getElementById('input-color')?.focus();
   };
 
-  const removeItem = (itemId) => {
-    setCurrentOrder({ ...currentOrder, items: currentOrder.items.filter(i => i.id !== itemId) });
-  };
+  const removeItem = (itemId) => { setCurrentOrder({ ...currentOrder, items: currentOrder.items.filter(i => i.id !== itemId) }); };
 
   const editItem = (item) => {
       const newQtds = { P: '', M: '', G: '', GG: '', G1: '', G2: '', G3: '' };
@@ -932,20 +786,23 @@ const RepDashboard = ({ user }) => {
     if (!currentOrder.clientId || currentOrder.items.length === 0) return alert('Selecione cliente e adicione itens');
     
     const finalOrder = {
-      ...currentOrder,
-      id: crypto.randomUUID(), 
       repId: user.id,
       repName: user.name,
-      createdAt: new Date().toISOString(),
+      clientId: currentOrder.clientId,
+      clientName: currentOrder.clientName,
+      clientCity: currentOrder.clientCity,
+      clientState: currentOrder.clientState,
+      deliveryDate: currentOrder.deliveryDate,
+      payment: currentOrder.payment,
+      notes: currentOrder.notes,
       status: 'Pendente',
-      // Serializa o array de itens para JSON string para salvar na coluna JSONB/TEXT do Supabase
       items: JSON.stringify(currentOrder.items) 
     };
     
     const { error } = await supabase.from('orders').insert(finalOrder); 
 
     if (error) {
-        alert('Erro ao salvar pedido.');
+        alert('Erro ao salvar pedido: ' + error.message);
     } else {
         alert('Pedido Salvo com Sucesso!');
         fetchRepData();
@@ -953,7 +810,6 @@ const RepDashboard = ({ user }) => {
         setCurrentOrder({ clientId: '', clientName: '', clientCity: '', clientState: '', deliveryDate: '', payment: '', items: [], notes: '' });
     }
   };
-
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -971,25 +827,12 @@ const RepDashboard = ({ user }) => {
                 <h2 className="text-xl font-bold">Histórico de Pedidos</h2>
                 <div className="flex items-center gap-2 w-full md:w-auto">
                     <Filter size={18} className="text-gray-500"/>
-                    <input 
-                        className="border p-2 rounded text-sm w-full md:w-64" 
-                        placeholder="Filtrar por nome do cliente..."
-                        value={clientFilter}
-                        onChange={e => setClientFilter(e.target.value)}
-                    />
+                    <input className="border p-2 rounded text-sm w-full md:w-64" placeholder="Filtrar por cliente..." value={clientFilter} onChange={e => setClientFilter(e.target.value)} />
                 </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="p-3">Data</th>
-                    <th className="p-3">Pedido ID</th>
-                    <th className="p-3">Cliente</th>
-                    <th className="p-3 text-center">Itens</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
+                <thead className="bg-gray-50"><tr><th className="p-3">Data</th><th className="p-3">Pedido ID</th><th className="p-3">Cliente</th><th className="p-3 text-center">Itens</th><th className="p-3">Status</th></tr></thead>
                 <tbody className="divide-y">
                   {filteredOrders.slice().reverse().map(o => (
                     <tr key={o.id}>
@@ -997,11 +840,7 @@ const RepDashboard = ({ user }) => {
                       <td className="p-3 font-mono text-xs">...{o.id.slice(-6)}</td>
                       <td className="p-3 font-bold">{o.clientName}</td>
                       <td className="p-3 text-center">{o.items.length} refs</td>
-                      <td className="p-3">
-                         <span className={`px-2 py-1 rounded text-xs ${o.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                             {o.status}
-                         </span>
-                      </td>
+                      <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${o.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{o.status}</span></td>
                     </tr>
                   ))}
                   {filteredOrders.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-gray-500">Nenhum pedido encontrado.</td></tr>}
@@ -1026,26 +865,16 @@ const RepDashboard = ({ user }) => {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm text-gray-600 mb-1">Selecione o Cliente</label>
-                    <select 
-                        className="w-full border p-2 rounded"
-                        value={currentOrder.clientId}
-                        onChange={(e) => {
+                    <select className="w-full border p-2 rounded" value={currentOrder.clientId} onChange={(e) => {
                             const c = clients.find(cl => cl.id == e.target.value);
                             if(c) setCurrentOrder({ ...currentOrder, clientId: c.id, clientName: c.name, clientCity: c.city, clientState: c.state, clientNeighborhood: c.neighborhood });
-                        }}
-                    >
+                        }}>
                         <option value="">-- Selecione --</option>
                         {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                 </div>
-                <div>
-                     <label className="block text-sm text-gray-600 mb-1">Data de Entrega</label>
-                     <input type="date" className="w-full border p-2 rounded" value={currentOrder.deliveryDate} onChange={e => setCurrentOrder({...currentOrder, deliveryDate: e.target.value})} />
-                </div>
-                <div className="md:col-span-2">
-                     <label className="block text-sm text-gray-600 mb-1">Forma de Pagamento</label>
-                     <input className="w-full border p-2 rounded" placeholder="Ex: 30/60 dias" value={currentOrder.payment} onChange={e => setCurrentOrder({...currentOrder, payment: e.target.value})} />
-                </div>
+                <div><label className="block text-sm text-gray-600 mb-1">Data de Entrega</label><input type="date" className="w-full border p-2 rounded" value={currentOrder.deliveryDate} onChange={e => setCurrentOrder({...currentOrder, deliveryDate: e.target.value})} /></div>
+                <div className="md:col-span-2"><label className="block text-sm text-gray-600 mb-1">Forma de Pagamento</label><input className="w-full border p-2 rounded" placeholder="Ex: 30/60 dias" value={currentOrder.payment} onChange={e => setCurrentOrder({...currentOrder, payment: e.target.value})} /></div>
              </div>
              {showClientModal && (
                  <div className="mt-4 p-4 bg-gray-50 rounded border animate-in fade-in">
@@ -1063,30 +892,16 @@ const RepDashboard = ({ user }) => {
 
           <Card className="border-l-4 border-green-500">
              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                    <h3 className="font-bold">Adicionar Itens</h3>
-                    {inputLine.grade && (
-                        <span className={`text-xs px-2 py-1 rounded font-bold ${inputLine.grade === 'STD' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                            {inputLine.grade === 'STD' ? 'Grade Normal' : 'Grade Plus'}
-                        </span>
-                    )}
-                </div>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                    {inputLine.grade ? 'Grade bloqueada automaticamente' : 'Digite a Ref para bloquear a grade'}
-                </span>
+                <div className="flex items-center gap-2"><h3 className="font-bold">Adicionar Itens</h3>{inputLine.grade && (<span className={`text-xs px-2 py-1 rounded font-bold ${inputLine.grade === 'STD' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{inputLine.grade === 'STD' ? 'Grade Normal' : 'Grade Plus'}</span>)}</div>
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{inputLine.grade ? 'Grade bloqueada automaticamente' : 'Digite a Ref para bloquear a grade'}</span>
              </div>
              
              <div className="bg-gray-100 p-2 rounded-t flex gap-2 text-sm font-bold text-gray-700">
-                <div className="w-24">Ref</div>
-                <div className="w-40">Cor</div>
-                {ALL_SIZES.map(s => <div key={s} className="flex-1 text-center">{s}</div>)}
-                <div className="w-10"></div>
+                <div className="w-24">Ref</div><div className="w-40">Cor</div>{ALL_SIZES.map(s => <div key={s} className="flex-1 text-center">{s}</div>)}<div className="w-10"></div>
              </div>
 
              <div className="flex gap-2 mb-2 p-2 border border-t-0 rounded-b bg-white shadow-sm" onKeyDown={(e) => { if(e.key === 'Enter') handleAddItem(); }}>
-                <div className="w-24">
-                    <input id="input-ref" className="w-full border p-1 rounded h-9 font-bold" placeholder="Ref" value={inputLine.ref} onChange={e => handleRefChange(e.target.value)} />
-                </div>
+                <div className="w-24"><input id="input-ref" className="w-full border p-1 rounded h-9 font-bold" placeholder="Ref" value={inputLine.ref} onChange={e => handleRefChange(e.target.value)} /></div>
                 <div className="w-40 relative">
                     <input id="input-color" list="colors-list" className="w-full border p-1 rounded h-9" placeholder="Cor" value={inputLine.color} onChange={e => setInputLine({...inputLine, color: e.target.value})} />
                     {availableColors.length > 0 && <datalist id="colors-list">{availableColors.map(c => <option key={c} value={c} />)}</datalist>}
@@ -1095,52 +910,25 @@ const RepDashboard = ({ user }) => {
                     let isDisabled = false;
                     if (inputLine.grade === 'STD' && SIZES_PLUS.includes(size)) isDisabled = true;
                     if (inputLine.grade === 'PLUS' && SIZES_STD.includes(size)) isDisabled = true;
-                    return (
-                        <div key={size} className="flex-1">
-                            <input type="number" disabled={isDisabled} className={`w-full border p-1 rounded text-center h-9 focus:bg-blue-50 focus:border-blue-500 ${isDisabled ? 'bg-gray-200 cursor-not-allowed' : ''}`} value={isDisabled ? '' : inputLine.qtds[size]} onChange={e => setInputLine({...inputLine, qtds: {...inputLine.qtds, [size]: e.target.value}})} />
-                        </div>
-                    );
+                    return (<div key={size} className="flex-1"><input type="number" disabled={isDisabled} className={`w-full border p-1 rounded text-center h-9 focus:bg-blue-50 focus:border-blue-500 ${isDisabled ? 'bg-gray-200 cursor-not-allowed' : ''}`} value={isDisabled ? '' : inputLine.qtds[size]} onChange={e => setInputLine({...inputLine, qtds: {...inputLine.qtds, [size]: e.target.value}})} /></div>);
                 })}
-                <div className="w-10 flex justify-center items-center">
-                    <button onClick={handleAddItem} className="bg-green-600 text-white rounded-full p-1 hover:bg-green-700 shadow"><Check size={16}/></button>
-                </div>
+                <div className="w-10 flex justify-center items-center"><button onClick={handleAddItem} className="bg-green-600 text-white rounded-full p-1 hover:bg-green-700 shadow"><Check size={16}/></button></div>
              </div>
 
              <div className="overflow-x-auto border rounded mt-4">
                 <table className="w-full text-sm text-center table-fixed">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="p-2 text-left w-24">Ref</th>
-                            <th className="p-2 text-left w-40">Cor</th>
-                            {ALL_SIZES.map(s => <th key={s} className="p-2">{s}</th>)}
-                            <th className="p-2 w-16">Total</th>
-                            <th className="p-2 w-16">Ações</th>
-                        </tr>
-                    </thead>
+                    <thead className="bg-gray-50"><tr><th className="p-2 text-left w-24">Ref</th><th className="p-2 text-left w-40">Cor</th>{ALL_SIZES.map(s => <th key={s} className="p-2">{s}</th>)}<th className="p-2 w-16">Total</th><th className="p-2 w-16">Ações</th></tr></thead>
                     <tbody className="divide-y">
                         {currentOrder.items.map(item => {
                              const total = Object.values(item.qtd).reduce((a,b) => a+b, 0);
-                             return (
-                                <tr key={item.id} className="hover:bg-gray-50 group">
-                                    <td className="p-2 text-left font-bold truncate">{item.ref}</td>
-                                    <td className="p-2 text-left truncate">{item.color}</td>
-                                    {ALL_SIZES.map(s => <td key={s} className="p-2 text-gray-600">{item.qtd[s] || '-'}</td>)}
-                                    <td className="p-2 font-bold bg-blue-50 text-blue-800">{total}</td>
-                                    <td className="p-2 flex justify-center gap-2">
-                                        <button onClick={() => editItem(item)} className="text-blue-500 hover:bg-blue-100 p-1 rounded"><Pencil size={16}/></button>
-                                        <button onClick={() => removeItem(item.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                             )
+                             return (<tr key={item.id} className="hover:bg-gray-50 group"><td className="p-2 text-left font-bold truncate">{item.ref}</td><td className="p-2 text-left truncate">{item.color}</td>{ALL_SIZES.map(s => <td key={s} className="p-2 text-gray-600">{item.qtd[s] || '-'}</td>)}<td className="p-2 font-bold bg-blue-50 text-blue-800">{total}</td><td className="p-2 flex justify-center gap-2"><button onClick={() => editItem(item)} className="text-blue-500 hover:bg-blue-100 p-1 rounded"><Pencil size={16}/></button><button onClick={() => removeItem(item.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={16}/></button></td></tr>)
                         })}
                         {currentOrder.items.length === 0 && <tr><td colSpan="12" className="p-4 text-gray-400 text-sm">Nenhum item adicionado ao pedido ainda.</td></tr>}
                     </tbody>
                 </table>
              </div>
           </Card>
-          <div className="flex gap-4">
-              <Button onClick={saveOrder} className="flex-1 py-3 text-lg shadow-lg bg-green-600 hover:bg-green-700">Finalizar Pedido</Button>
-          </div>
+          <div className="flex gap-4"><Button onClick={saveOrder} className="flex-1 py-3 text-lg shadow-lg bg-green-600 hover:bg-green-700">Finalizar Pedido</Button></div>
         </div>
       )}
     </div>
@@ -1153,36 +941,15 @@ const RepDashboard = ({ user }) => {
 
 const App = () => {
   const [user, setUser] = useState(null);
-  
-  // Limpa o localStorage MOCK no carregamento
-  useEffect(() => {
-    // Inicialização de MOCK DB para garantir as chaves existam se o Supabase não estiver configurado
-    if (SUPABASE_URL.includes('SUA_')) {
-        if (!localStorage.getItem('temp_conf_users')) db.set('users', []);
-        if (!localStorage.getItem('temp_conf_products')) db.set('products', []);
-        if (!localStorage.getItem('temp_conf_clients')) db.set('clients', []);
-        if (!localStorage.getItem('temp_conf_orders')) db.set('orders', []);
-    }
-  }, []);
-
-  const handleLogout = async () => {
-      // No Supabase real, você faria: await supabase.auth.signOut();
-      setUser(null);
-  }
+  const handleLogout = () => setUser(null);
 
   if (!user) return <LoginScreen onLogin={setUser} />;
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
       <div className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center print:hidden sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-            <Package className="text-blue-400"/>
-            <h1 className="font-bold text-xl tracking-tight hidden md:block">Confecção Manager (Supabase Ready)</h1>
-        </div>
-        <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-300">Olá, <strong className="text-white">{user.name}</strong></span>
-            <button onClick={handleLogout} className="p-2 bg-slate-800 rounded hover:bg-slate-700 transition-colors" title="Sair"><LogOut size={18}/></button>
-        </div>
+        <div className="flex items-center gap-2"><Package className="text-blue-400"/><h1 className="font-bold text-xl tracking-tight hidden md:block">Confecção Manager</h1></div>
+        <div className="flex items-center gap-4"><span className="text-sm text-gray-300">Olá, <strong className="text-white">{user.name}</strong></span><button onClick={handleLogout} className="p-2 bg-slate-800 rounded hover:bg-slate-700 transition-colors" title="Sair"><LogOut size={18}/></button></div>
       </div>
       <main className="pb-20 pt-6">
         {user.role === 'admin' ? <AdminDashboard /> : <RepDashboard user={user} />}
