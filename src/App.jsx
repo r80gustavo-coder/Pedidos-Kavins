@@ -17,7 +17,7 @@ const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
 // --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
-// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
 // --- MODO SIMULAÇÃO (PARA NÃO DAR ERRO AQUI NO CHAT) ---
@@ -1029,4 +1029,5 @@ const App = () => {
 };
 
 export default App;
+
 
