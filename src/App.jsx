@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-// import { createClient } from '@supabase/supabase-js'; // <--- DESCOMENTE PARA VERCEL/PRODUÇÃO
+import { createClient } from '@supabase/supabase-js'; // <--- DESCOMENTE PARA VERCEL/PRODUÇÃO
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
   Printer, Check, Search, FileText, ChevronRight, Filter,
@@ -1021,4 +1021,5 @@ const App = () => {
 };
 
 export default App;
+
 
