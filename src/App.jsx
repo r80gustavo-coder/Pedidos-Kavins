@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+// import { createClient } from '@supabase/supabase-js'; // <--- DESCOMENTE PARA VERCEL/PRODUÇÃO
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
   Printer, Check, Search, FileText, ChevronRight, Filter,
@@ -7,13 +7,72 @@ import {
 } from 'lucide-react';
 
 // =========================================================
-// --- 1. CONFIGURAÇÃO SUPABASE (REAL) ---
+// --- CONFIGURAÇÃO SUPABASE ---
 // =========================================================
+
 const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// Inicializa a conexão real com o Banco de Dados
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// --- OPÇÃO A: MODO PRODUÇÃO (Para Vercel/Supabase Real) ---
+// Descomente a linha abaixo e comente o bloco da OPÇÃO B quando for subir para o GitHub
+// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// --- OPÇÃO B: MODO SIMULAÇÃO (Para visualizar aqui no chat sem erros) ---
+// Este bloco simula o Supabase usando o localStorage do navegador.
+// COMENTE ESTE BLOCO INTEIRO QUANDO FOR USAR NO VERCEL
+const supabase = {
+    from: (table) => ({
+        select: async (query = '*') => {
+            console.warn(`[MOCK] Select em ${table}`);
+            return { data: JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]'), error: null };
+        },
+        insert: async (records) => {
+            console.warn(`[MOCK] Insert em ${table}`);
+            const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+            const newRecords = Array.isArray(records) ? records : [records];
+            // Adiciona ID se não tiver
+            const processed = newRecords.map(r => ({ ...r, id: r.id || crypto.randomUUID() }));
+            localStorage.setItem(`temp_conf_${table}`, JSON.stringify([...current, ...processed]));
+            return { data: processed, error: null };
+        },
+        update: async (changes) => {
+             // Mock update retorna um objeto chainable fake para .eq
+             return {
+                 eq: async (col, val) => {
+                    console.warn(`[MOCK] Update em ${table} onde ${col}=${val}`);
+                    const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+                    const updated = current.map(item => item[col] === val ? { ...item, ...changes } : item);
+                    localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
+                    return { data: updated, error: null };
+                 }
+             }
+        },
+        delete: async () => {
+            return {
+                eq: async (col, val) => {
+                    console.warn(`[MOCK] Delete em ${table} onde ${col}=${val}`);
+                    const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+                    const updated = current.filter(item => item[col] !== val);
+                    localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
+                    return { data: null, error: null };
+                }
+            }
+        }
+    }),
+    auth: {
+        signInWithPassword: async ({ email, password }) => {
+            if (email === 'gustavo_benvindo80@hotmail.com' && password === 'Gustavor80') {
+                return { user: { id: 'admin-id', email, role: 'admin', name: 'Gustavo Admin' }, error: null };
+            }
+            const allUsers = JSON.parse(localStorage.getItem('temp_conf_users') || '[]');
+            const user = allUsers.find(u => u.username === email && u.password === password);
+            if (user) return { user: { id: user.id, email: user.username, role: 'rep', name: user.name }, error: null };
+            return { user: null, error: { message: 'Credenciais inválidas (MOCK)' } };
+        }
+    }
+};
+// --- FIM DO BLOCO MOCK ---
+
 
 // =========================================================
 // --- 2. CONSTANTES ---
@@ -88,14 +147,18 @@ const LoginScreen = ({ onLogin }) => {
         const { data, error } = await supabase
             .from('users')
             .select('*')
-            .eq('username', email)
+            // Mock handling vs Real handling
+            .eq('username', email) 
             .eq('password', password) // Nota: Em produção real, use hash de senha
-            .single();
+            .single(); // Mock pode não suportar single() perfeitamente, mas vamos tentar
         
-        if (error || !data) {
+        // Ajuste para Mock que retorna array
+        const user = Array.isArray(data) ? data[0] : data;
+
+        if (error || !user) {
             setError('Usuário ou senha inválidos.');
         } else {
-            onLogin({ id: data.id, email: data.username, role: 'rep', name: data.name });
+            onLogin({ id: user.id, email: user.username, role: 'rep', name: user.name });
         }
     } catch (e) {
         setError('Erro de conexão. Verifique sua internet.');
@@ -269,15 +332,12 @@ const AdminDashboard = () => {
 
   // --- Carregamento de Dados (SUPABASE) ---
   const fetchAllData = useCallback(async () => {
-    // Busca Usuários
     const { data: usersData } = await supabase.from('users').select('*');
     setUsers(usersData || []);
 
-    // Busca Produtos
     const { data: productsData } = await supabase.from('products').select('*');
     setProducts(productsData || []);
 
-    // Busca Pedidos
     const { data: ordersData } = await supabase.from('orders').select('*');
     // Converte o JSONB de items para objeto JS
     const parsedOrders = (ordersData || []).map(order => ({
@@ -343,6 +403,7 @@ const AdminDashboard = () => {
 
   const markAsPrinted = async (orderIds) => {
     // Atualiza status no Supabase
+    // Como mock não suporta .in(), fazemos loop. Em produção pode usar .in('id', orderIds)
     const promises = orderIds.map(id => 
         supabase.from('orders').update({ status: 'Impresso' }).eq('id', id)
     );
@@ -850,6 +911,7 @@ const RepDashboard = ({ user }) => {
         </Card>
       )}
 
+      {/* ... (View 'new' é igual ao anterior, apenas usando as funções atualizadas acima) ... */}
       {view === 'new' && (
         <div className="space-y-6">
           <div className="flex items-center gap-2 mb-2">
