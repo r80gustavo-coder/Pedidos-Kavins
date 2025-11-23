@@ -386,33 +386,51 @@ const AdminDashboard = () => {
       });
       return Object.entries(stats).sort(([,a], [,b]) => b - a);
   }, [orders, reportRef]);
-
+  
+// --- FIX: Relatório por Data (Ignora horários e fuso) ---
   const dateRangeConsolidated = useMemo(() => {
+      // 1. Se não tiver data selecionada, não faz nada
       if(!dateRange.start || !dateRange.end) return null;
-      const start = new Date(dateRange.start + 'T00:00:00');
-      const end = new Date(dateRange.end + 'T23:59:59');
+      
+      // 2. As datas do input já vêm no formato "AAAA-MM-DD"
+      const startStr = dateRange.start; 
+      const endStr = dateRange.end;
       
       const filteredOrders = orders.filter(o => {
-          const d = new Date(o.createdAt);
-          return d >= start && d <= end;
+          // Proteção: Se o pedido não tiver data de criação, ignora
+          if (!o.createdAt) return false;
+
+          // 3. O TRUQUE: Pega apenas os 10 primeiros caracteres da data do banco
+          // Ex: transforma "2023-11-25T15:30:00.000Z" em "2023-11-25"
+          const orderDate = o.createdAt.substring(0, 10);
+
+          // Compara se a data do pedido está entre o início e o fim
+          return orderDate >= startStr && orderDate <= endStr;
       });
 
+      // --- Daqui para baixo é a lógica de somar as peças (igual antes) ---
       const consolidation = {}; 
       filteredOrders.forEach(order => {
+        // Garante que items é um array antes de tentar ler
         if(Array.isArray(order.items)) {
             order.items.forEach(item => {
               const key = `${item.ref}#${item.color}`;
+              
               if (!consolidation[key]) {
                 consolidation[key] = { ref: item.ref, color: item.color, sizes: { P:0, M:0, G:0, GG:0, G1:0, G2:0, G3:0 } };
               }
-              Object.keys(item.qtd).forEach(size => {
-                 if(consolidation[key].sizes[size] !== undefined) {
-                     consolidation[key].sizes[size] += Number(item.qtd[size]);
-                 }
-              });
+
+              if (item.qtd) {
+                  Object.keys(item.qtd).forEach(size => {
+                     if(consolidation[key].sizes[size] !== undefined) {
+                         consolidation[key].sizes[size] += Number(item.qtd[size]);
+                     }
+                  });
+              }
             });
         }
       });
+
       return Object.values(consolidation).sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
   }, [orders, dateRange]);
 
@@ -979,3 +997,4 @@ const App = () => {
 };
 
 export default App;
+
