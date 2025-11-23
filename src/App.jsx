@@ -24,7 +24,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 
 // --- OPÇÃO B: MODO SIMULAÇÃO (MOCK - Para o chat) ---
-const supabase = {
+// const supabase = {
     from: (table) => ({
         select: async (query = '*') => {
             console.warn(`[MOCK] Select em ${table}`);
@@ -739,4 +739,5 @@ const App = () => {
 };
 
 export default App;
+
 
