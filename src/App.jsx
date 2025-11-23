@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
- import { createClient } from '@supabase/supabase-js';
+// import { createClient } from '@supabase/supabase-js';
 
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
@@ -20,9 +20,60 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // 1. Descomente a linha abaixo.
 // 2. Comente ou apague o bloco da "OPÇÃO B".
 
- const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
+// --- OPÇÃO B: MODO SIMULAÇÃO (MOCK - Para o chat) ---
+const supabase = {
+    from: (table) => ({
+        select: async (query = '*') => {
+            console.warn(`[MOCK] Select em ${table}`);
+            return { data: JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]'), error: null };
+        },
+        insert: async (records) => {
+            console.warn(`[MOCK] Insert em ${table}`);
+            const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+            const newRecords = Array.isArray(records) ? records : [records];
+            const processed = newRecords.map(r => ({ ...r, id: r.id || crypto.randomUUID() }));
+            localStorage.setItem(`temp_conf_${table}`, JSON.stringify([...current, ...processed]));
+            return { data: processed, error: null };
+        },
+        update: async (changes) => {
+             return {
+                 eq: async (col, val) => {
+                    console.warn(`[MOCK] Update em ${table}`);
+                    const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+                    const updated = current.map(item => item[col] === val ? { ...item, ...changes } : item);
+                    localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
+                    return { data: updated, error: null };
+                 }
+             }
+        },
+        delete: async () => {
+            return {
+                eq: async (col, val) => {
+                    console.warn(`[MOCK] Delete em ${table}`);
+                    const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
+                    const updated = current.filter(item => item[col] !== val);
+                    localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
+                    return { data: null, error: null };
+                }
+            }
+        }
+    }),
+    auth: {
+        signInWithPassword: async ({ email, password }) => {
+            if (email === 'gustavo_benvindo80@hotmail.com' && password === 'Gustavor80') {
+                return { user: { id: 'admin-id', email, role: 'admin', name: 'Gustavo Admin' }, error: null };
+            }
+            const allUsers = JSON.parse(localStorage.getItem('temp_conf_users') || '[]');
+            const user = allUsers.find(u => u.username === email && u.password === password);
+            if (user) return { user: { id: user.id, email: user.username, role: 'rep', name: user.name }, error: null };
+            return { user: null, error: { message: 'Credenciais inválidas (MOCK)' } };
+        }
+    }
+};
+// --- FIM DO BLOCO MOCK ---
 
 
 // =========================================================
@@ -688,4 +739,3 @@ const App = () => {
 };
 
 export default App;
-
