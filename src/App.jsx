@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
-// --- PARA VERCEL (PRODUÇÃO): CONEXÃO ATIVA ---
-import { createClient } from '@supabase/supabase-js';
+// ==================================================================================
+// ⚠️ INSTRUÇÕES PARA VERCEL (PRODUÇÃO)
+// Quando for subir para o GitHub/Vercel, faça o seguinte neste arquivo:
+// 1. DESCOMENTE a linha do 'import { createClient } ...' abaixo.
+// 2. DESCOMENTE a linha 'const supabase = createClient(...)' na seção de Configuração.
+// 3. COMENTE ou APAGUE todo o bloco 'const supabase = { ... }' (Mock) lá embaixo.
+// ==================================================================================
+
+// PASSO 1: Descomente esta linha para o Vercel
+ import { createClient } from '@supabase/supabase-js';
 
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
@@ -16,8 +24,12 @@ import {
 const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// Inicializa a conexão real
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// PASSO 2: Descomente esta linha para o Vercel (Conexão Real)
+// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+
+
 
 // =========================================================
 // --- 2. CONSTANTES ---
@@ -91,25 +103,37 @@ const LoginScreen = ({ onLogin }) => {
             return;
         }
 
-        // 2. Verifica Representantes
-        const { data, error } = await supabase
+        // 2. Verifica Representantes (Fallback compatível com Mock e Real)
+        // Quando estiver no REAL, o .maybeSingle() funcionará corretamente.
+        // No MOCK, ele retornará array ou null dependendo da implementação.
+        const query = supabase
             .from('users')
             .select('*')
             .eq('username', cleanUser) 
-            .eq('password', cleanPass)
-            .maybeSingle(); 
+            .eq('password', cleanPass);
         
-        if (error) {
-            console.error('Erro Login:', error);
-            setError('Erro de conexão ou dados inválidos.');
-        } else if (data) {
-            onLogin({ id: data.id, email: data.username, role: 'rep', name: data.name });
-        } else {
-            setError('Usuário ou senha incorretos.');
+        const { data, error } = query.maybeSingle ? await query.maybeSingle() : await query; // Adaptador Mock/Real
+        
+        // Tratamento para o Mock que retorna array
+        const userFound = Array.isArray(data) ? data[0] : data;
+        
+        // Se não achou na tabela 'users', tenta via Auth (caso use Auth do Supabase)
+        if (!userFound && supabase.auth.signInWithPassword.toString().includes('MOCK')) {
+             // Só chama mock auth se tabela falhar
+             const res = await supabase.auth.signInWithPassword({ email: cleanUser, password: cleanPass });
+             if(res.user) {
+                 onLogin(res.user);
+                 return;
+             }
         }
 
+        if (userFound) {
+             onLogin({ id: userFound.id, email: userFound.username, role: 'rep', name: userFound.name });
+        } else {
+             setError('Usuário ou senha incorretos.');
+        }
     } catch (e) {
-        setError('Erro inesperado.');
+        setError('Erro inesperado. Verifique conexão.');
         console.error(e);
     } finally {
         setIsLoading(false);
@@ -125,7 +149,7 @@ const LoginScreen = ({ onLogin }) => {
             label="Usuário / Email" 
             value={email} 
             onChange={e => setEmail(e.target.value)} 
-            placeholder="Ex: joao (Usuário cadastrado pelo Admin)"
+            placeholder="Ex: joao"
           />
           <Input 
             label="Senha" 
@@ -136,7 +160,7 @@ const LoginScreen = ({ onLogin }) => {
           />
           {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'Verificando...' : 'Entrar'}
+            {isLoading ? 'Entrando...' : 'Entrar'}
           </Button>
         </form>
       </Card>
@@ -156,11 +180,11 @@ const DashboardStats = ({ orders, title }) => {
     const refColors = {}; 
 
     orders.forEach(order => {
-      // Parse seguro dos itens
       let items = [];
+      // Parse seguro para JSONB ou Array
       if (Array.isArray(order.items)) items = order.items;
       else if (typeof order.items === 'string') {
-          try { items = JSON.parse(order.items); } catch(e) { items = []; }
+          try { items = JSON.parse(order.items); } catch(e){ items = []; }
       }
 
       items.forEach(item => {
@@ -176,13 +200,8 @@ const DashboardStats = ({ orders, title }) => {
       });
     });
 
-    const topRefs = Object.entries(refSales)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5);
-    
-    const topItems = Object.entries(refColors)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5);
+    const topRefs = Object.entries(refSales).sort(([, a], [, b]) => b - a).slice(0, 5);
+    const topItems = Object.entries(refColors).sort(([, a], [, b]) => b - a).slice(0, 5);
 
     return { totalOrders, totalItems, topRefs, topItems };
   }, [orders]);
@@ -190,40 +209,29 @@ const DashboardStats = ({ orders, title }) => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
-      
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-blue-50 border-l-4 border-blue-500">
           <div className="flex justify-between items-start">
-            <div>
-                <h3 className="text-gray-500 text-sm font-semibold">Peças Vendidas</h3>
-                <p className="text-3xl font-bold text-blue-700">{stats.totalItems}</p>
-            </div>
+            <div><h3 className="text-gray-500 text-sm font-semibold">Peças Vendidas</h3><p className="text-3xl font-bold text-blue-700">{stats.totalItems}</p></div>
             <Package className="text-blue-300" size={24}/>
           </div>
         </Card>
         <Card className="bg-green-50 border-l-4 border-green-500">
           <div className="flex justify-between items-start">
-             <div>
-                <h3 className="text-gray-500 text-sm font-semibold">Total Pedidos</h3>
-                <p className="text-3xl font-bold text-green-700">{stats.totalOrders}</p>
-             </div>
+             <div><h3 className="text-gray-500 text-sm font-semibold">Total Pedidos</h3><p className="text-3xl font-bold text-green-700">{stats.totalOrders}</p></div>
              <FileText className="text-green-300" size={24}/>
           </div>
         </Card>
         <Card className="bg-purple-50 border-l-4 border-purple-500">
           <div className="flex justify-between items-start">
-             <div>
-                <h3 className="text-gray-500 text-sm font-semibold">Top Referência</h3>
-                <p className="text-xl font-bold text-purple-700 truncate w-full">
-                    {stats.topRefs[0] ? `#${stats.topRefs[0][0]}` : '-'}
-                </p>
+             <div><h3 className="text-gray-500 text-sm font-semibold">Top Referência</h3>
+                <p className="text-xl font-bold text-purple-700 truncate w-full">{stats.topRefs[0] ? `#${stats.topRefs[0][0]}` : '-'}</p>
                 <p className="text-xs text-purple-600">{stats.topRefs[0] ? `${stats.topRefs[0][1]} unidades` : ''}</p>
              </div>
              <TrendingUp className="text-purple-300" size={24}/>
           </div>
         </Card>
       </div>
-      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><TrendingUp size={18}/> Referências Mais Vendidas</h3>
@@ -232,28 +240,19 @@ const DashboardStats = ({ orders, title }) => {
                     <div key={ref} className="flex items-center">
                         <span className="w-6 text-gray-400 font-bold text-sm">#{idx + 1}</span>
                         <div className="flex-1">
-                            <div className="flex justify-between mb-1">
-                                <span className="text-sm font-medium">Ref: {ref}</span>
-                                <span className="text-sm text-gray-600">{qtd} un</span>
-                            </div>
-                            <div className="w-full bg-gray-100 rounded-full h-2">
-                                <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${(qtd / (stats.totalItems || 1)) * 100}%` }}></div>
-                            </div>
+                            <div className="flex justify-between mb-1"><span className="text-sm font-medium">Ref: {ref}</span><span className="text-sm text-gray-600">{qtd} un</span></div>
+                            <div className="w-full bg-gray-100 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${(qtd / (stats.totalItems || 1)) * 100}%` }}></div></div>
                         </div>
                     </div>
                 ))}
                 {stats.topRefs.length === 0 && <p className="text-gray-400 text-sm">Sem dados de vendas.</p>}
             </div>
           </Card>
-          
           <Card>
             <h3 className="text-lg font-bold mb-4">Top Itens (Ref + Cor)</h3>
             <div className="divide-y">
                 {stats.topItems.map(([key, qtd], idx) => (
-                     <div key={idx} className="py-2 flex justify-between text-sm">
-                         <span className="text-gray-700">{key}</span>
-                         <span className="font-bold text-gray-900">{qtd} un</span>
-                     </div>
+                     <div key={idx} className="py-2 flex justify-between text-sm"><span className="text-gray-700">{key}</span><span className="font-bold text-gray-900">{qtd} un</span></div>
                 ))}
                  {stats.topItems.length === 0 && <p className="text-gray-400 text-sm">Sem dados de vendas.</p>}
             </div>
@@ -280,7 +279,7 @@ const AdminDashboard = () => {
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [newProd, setNewProd] = useState({ ref: '', color: '', grade: 'STD' });
 
-  // --- Carregamento de Dados (SUPABASE) ---
+  // --- Carregamento de Dados ---
   const fetchAllData = useCallback(async () => {
     const { data: usersData } = await supabase.from('users').select('*');
     setUsers(usersData || []);
@@ -289,7 +288,7 @@ const AdminDashboard = () => {
     setProducts(productsData || []);
 
     const { data: ordersData } = await supabase.from('orders').select('*');
-    // Normaliza items
+    // Normaliza items (JSON.parse seguro)
     const parsedOrders = (ordersData || []).map(order => {
         let items = [];
         if(Array.isArray(order.items)) items = order.items;
@@ -305,28 +304,28 @@ const AdminDashboard = () => {
     fetchAllData();
   }, [fetchAllData, view]);
 
-
-  // --- Ações do Admin ---
+  // --- Handlers ---
   const addUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) return alert('Preencha todos os campos');
     
-    // Verifica se usuário já existe
-    const { data: existing } = await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle();
-    if (existing) return alert('Erro: Este nome de usuário já existe.');
+    // Verifica duplicidade (se não for mock)
+    if(!supabase.auth.toString().includes('MOCK')) {
+         const { data: existing } = await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle();
+         if (existing) return alert('Erro: Este nome de usuário já existe.');
+    }
 
     const { error } = await supabase.from('users').insert(newUser);
-    
     if (error) {
         alert('Erro ao cadastrar: ' + error.message);
     } else {
-        alert('Representante cadastrado com sucesso!');
+        alert('Representante cadastrado!');
         fetchAllData(); 
         setNewUser({ name: '', username: '', password: '' });
     }
   };
 
   const removeUser = async (id) => {
-    if (confirm('Tem certeza? Isso apagará o representante.')) {
+    if (confirm('Tem certeza?')) {
       const { error } = await supabase.from('users').delete().eq('id', id); 
       if (error) alert('Erro ao deletar: ' + error.message);
       else fetchAllData(); 
@@ -334,21 +333,15 @@ const AdminDashboard = () => {
   };
 
   const addProduct = async () => {
-    if (!newProd.ref || !newProd.color) return alert('Preencha referência e cor');
-    
+    if (!newProd.ref || !newProd.color) return alert('Preencha tudo');
     const { error } = await supabase.from('products').insert(newProd);
-    if (error) {
-        alert('Erro: Produto já existe ou falha na conexão.');
-    } else {
-        alert('Produto adicionado!');
-        fetchAllData();
-        setNewProd({ ...newProd, color: '' }); 
-    }
+    if (error) alert('Erro ao adicionar.');
+    else { alert('Produto adicionado!'); fetchAllData(); setNewProd({ ...newProd, color: '' }); }
   };
 
   const removeProduct = async (id) => {
     const { error } = await supabase.from('products').delete().eq('id', id); 
-    if (error) alert('Erro ao deletar produto.');
+    if (error) alert('Erro ao deletar.');
     else fetchAllData();
   };
 
@@ -373,28 +366,28 @@ const AdminDashboard = () => {
       if(!reportRef) return [];
       const stats = {};
       orders.forEach(o => {
-          if(Array.isArray(o.items)) {
-              o.items.forEach(i => {
-                  if(i.ref === reportRef) {
-                      if(!stats[i.color]) stats[i.color] = 0;
-                      stats[i.color] += Object.values(i.qtd || {}).reduce((a,b)=>a+Number(b),0);
-                  }
-              });
-          }
+          o.items.forEach(i => {
+              if(i.ref === reportRef) {
+                  if(!stats[i.color]) stats[i.color] = 0;
+                  stats[i.color] += Object.values(i.qtd || {}).reduce((a,b)=>a+Number(b),0);
+              }
+          });
       });
       return Object.entries(stats).sort(([,a], [,b]) => b - a);
   }, [orders, reportRef]);
 
-  // --- FIX RELATÓRIO POR DATA ---
-  // Agora usando comparação de string (YYYY-MM-DD) para ignorar fuso horário e horas
+  // --- FIX: Relatório por Data (String comparison) ---
   const dateRangeConsolidated = useMemo(() => {
       if(!dateRange.start || !dateRange.end) return null;
       
+      const startStr = dateRange.start; 
+      const endStr = dateRange.end;
+      
       const filteredOrders = orders.filter(o => {
           if (!o.createdAt) return false;
-          // Pega apenas os primeiros 10 caracteres (YYYY-MM-DD) da string ISO vinda do Supabase
+          // Pega os primeiros 10 caracteres (YYYY-MM-DD) independente de fuso
           const orderDate = o.createdAt.substring(0, 10);
-          return orderDate >= dateRange.start && orderDate <= dateRange.end;
+          return orderDate >= startStr && orderDate <= endStr;
       });
 
       const consolidation = {}; 
@@ -422,11 +415,11 @@ const AdminDashboard = () => {
   return (
     <div className="p-6">
       <div className="flex gap-4 mb-6 print:hidden overflow-x-auto pb-2">
-        <Button variant={view === 'dashboard' ? 'primary' : 'secondary'} onClick={() => setView('dashboard')}>Dashboard</Button>
-        <Button variant={view === 'users' ? 'primary' : 'secondary'} onClick={() => setView('users')}>Representantes</Button>
-        <Button variant={view === 'products' ? 'primary' : 'secondary'} onClick={() => setView('products')}>Catálogo</Button>
-        <Button variant={view === 'orders' ? 'primary' : 'secondary'} onClick={() => setView('orders')}>Gestão de Pedidos</Button>
-        <Button variant={view === 'reports' ? 'primary' : 'secondary'} onClick={() => setView('reports')}>Relatórios</Button>
+        <Button onClick={() => setView('dashboard')}>Dashboard</Button>
+        <Button onClick={() => setView('users')}>Representantes</Button>
+        <Button onClick={() => setView('products')}>Catálogo</Button>
+        <Button onClick={() => setView('orders')}>Pedidos</Button>
+        <Button onClick={() => setView('reports')}>Relatórios</Button>
       </div>
 
       {view === 'dashboard' && <DashboardStats orders={orders} title="Visão Geral do Admin" />}
@@ -436,7 +429,7 @@ const AdminDashboard = () => {
           <Card>
             <h3 className="font-bold text-lg mb-4">Cadastrar Representante</h3>
             <Input label="Nome Completo" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-            <Input label="Usuário de Acesso" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+            <Input label="Usuário" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
             <Input label="Senha" type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
             <Button onClick={addUser} className="w-full">Cadastrar</Button>
           </Card>
@@ -445,13 +438,8 @@ const AdminDashboard = () => {
             <div className="divide-y">
               {users.map(u => (
                 <div key={u.id} className="py-3 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold">{u.name}</p>
-                    <p className="text-sm text-gray-500">User: {u.username}</p>
-                  </div>
-                  <button onClick={() => removeUser(u.id)} className="text-red-500 hover:bg-red-50 p-2 rounded">
-                    <Trash2 size={18} />
-                  </button>
+                  <div><p className="font-bold">{u.name}</p><p className="text-sm text-gray-500">User: {u.username}</p></div>
+                  <button onClick={() => removeUser(u.id)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={18} /></button>
                 </div>
               ))}
             </div>
@@ -464,52 +452,27 @@ const AdminDashboard = () => {
           <Card>
             <h3 className="font-bold text-lg mb-4">Adicionar ao Catálogo</h3>
             <div className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 w-full">
-                <Input label="Referência" value={newProd.ref} onChange={e => setNewProd({...newProd, ref: e.target.value})} placeholder="Ex: 1050" />
-              </div>
-              <div className="flex-1 w-full">
-                <Input label="Cor" value={newProd.color} onChange={e => setNewProd({...newProd, color: e.target.value})} placeholder="Ex: Azul Marinho" />
-              </div>
+              <div className="flex-1 w-full"><Input label="Referência" value={newProd.ref} onChange={e => setNewProd({...newProd, ref: e.target.value})} placeholder="Ex: 1050" /></div>
+              <div className="flex-1 w-full"><Input label="Cor" value={newProd.color} onChange={e => setNewProd({...newProd, color: e.target.value})} placeholder="Ex: Azul Marinho" /></div>
               <div className="w-full md:w-40 mb-3">
                 <label className="text-sm font-semibold text-gray-700 block mb-1">Grade</label>
-                <select 
-                  className="w-full border p-2 rounded-md h-[42px] bg-white" 
-                  value={newProd.grade} 
-                  onChange={e => setNewProd({...newProd, grade: e.target.value})}
-                >
-                  <option value="STD">P ao GG</option>
-                  <option value="PLUS">G1 ao G3</option>
+                <select className="w-full border p-2 rounded-md h-[42px] bg-white" value={newProd.grade} onChange={e => setNewProd({...newProd, grade: e.target.value})}>
+                  <option value="STD">P ao GG</option><option value="PLUS">G1 ao G3</option>
                 </select>
               </div>
-              <div className="mb-3">
-                <Button onClick={addProduct}><Plus size={20}/></Button>
-              </div>
+              <div className="mb-3"><Button onClick={addProduct}><Plus size={20}/></Button></div>
             </div>
           </Card>
-
           <Card>
              <h3 className="font-bold text-lg mb-4">Produtos Cadastrados</h3>
              <div className="overflow-x-auto">
                <table className="w-full text-left text-sm">
-                 <thead className="bg-gray-50 border-b">
-                   <tr>
-                     <th className="p-3">Ref</th>
-                     <th className="p-3">Cor</th>
-                     <th className="p-3">Grade</th>
-                     <th className="p-3 text-right">Ação</th>
-                   </tr>
-                 </thead>
+                 <thead className="bg-gray-50 border-b"><tr><th className="p-3">Ref</th><th className="p-3">Cor</th><th className="p-3">Grade</th><th className="p-3 text-right">Ação</th></tr></thead>
                  <tbody className="divide-y">
                    {products.map(p => (
                      <tr key={p.id} className="hover:bg-gray-50">
-                       <td className="p-3 font-medium">{p.ref}</td>
-                       <td className="p-3">{p.color}</td>
-                       <td className="p-3">{p.grade === 'STD' ? 'P-GG' : 'G1-G3'}</td>
-                       <td className="p-3 text-right">
-                         <button onClick={() => removeProduct(p.id)} className="text-red-500 hover:text-red-700">
-                           <Trash2 size={16}/>
-                         </button>
-                       </td>
+                       <td className="p-3 font-medium">{p.ref}</td><td className="p-3">{p.color}</td><td className="p-3">{p.grade === 'STD' ? 'P-GG' : 'G1-G3'}</td>
+                       <td className="p-3 text-right"><button onClick={() => removeProduct(p.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td>
                      </tr>
                    ))}
                  </tbody>
@@ -524,12 +487,8 @@ const AdminDashboard = () => {
           <div className="flex justify-between items-center print:hidden">
             <h2 className="text-xl font-bold">Gestão de Pedidos (Seleção)</h2>
             <div className="space-x-2">
-                <Button variant="outline" onClick={() => {
-                    window.print(); 
-                    if(selectedOrdersForReport.length > 0) markAsPrinted(selectedOrdersForReport);
-                }}>
-                    <Printer size={18} className="mr-2 inline"/>
-                    Imprimir Selecionados
+                <Button variant="outline" onClick={() => { window.print(); if(selectedOrdersForReport.length > 0) markAsPrinted(selectedOrdersForReport); }}>
+                    <Printer size={18} className="mr-2 inline"/> Imprimir Selecionados
                 </Button>
             </div>
           </div>
@@ -542,23 +501,10 @@ const AdminDashboard = () => {
                     <button className="text-xs text-blue-600 underline" onClick={() => setSelectedOrdersForReport([])}>Limpar</button>
                  </div>
                  {orders.slice().reverse().map(order => (
-                   <div 
-                    key={order.id} 
-                    className={`p-3 border rounded mb-2 cursor-pointer transition-colors ${selectedOrdersForReport.includes(order.id) ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50'}`}
-                    onClick={() => toggleOrderSelection(order.id)}
-                   >
+                   <div key={order.id} className={`p-3 border rounded mb-2 cursor-pointer transition-colors ${selectedOrdersForReport.includes(order.id) ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50'}`} onClick={() => toggleOrderSelection(order.id)}>
                      <div className="flex justify-between items-start">
-                        <div>
-                            <p className="font-bold text-sm">#{order.id.slice(-6).toUpperCase()}</p>
-                            <p className="text-xs text-gray-500">{order.clientName}</p>
-                            <p className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString()}</p>
-                        </div>
-                        <div className="text-right">
-                           <span className={`text-xs px-2 py-1 rounded-full ${order.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                               {order.status}
-                           </span>
-                           <p className="text-xs font-bold mt-1 text-gray-600">{order.repName}</p>
-                        </div>
+                        <div><p className="font-bold text-sm">#{order.id.slice(-6).toUpperCase()}</p><p className="text-xs text-gray-500">{order.clientName}</p><p className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString()}</p></div>
+                        <div className="text-right"><span className={`text-xs px-2 py-1 rounded-full ${order.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{order.status}</span><p className="text-xs font-bold mt-1 text-gray-600">{order.repName}</p></div>
                      </div>
                    </div>
                  ))}
@@ -573,60 +519,31 @@ const AdminDashboard = () => {
                     </div>
 
                     {selectedOrdersForReport.length === 0 ? (
-                        <div className="text-center text-gray-400 py-10 print:hidden">
-                            Selecione pedidos ao lado para ver e imprimir.
-                        </div>
+                        <div className="text-center text-gray-400 py-10 print:hidden">Selecione pedidos ao lado para ver e imprimir.</div>
                     ) : (
                         <div className="print:w-full">
                             {orders.filter(o => selectedOrdersForReport.includes(o.id)).map((order, orderIdx) => (
                                 <div key={order.id} className={`mb-8 border-2 border-black p-4 break-inside-avoid ${orderIdx > 0 ? 'print:break-before-page' : ''}`}>
                                     <div className="flex justify-between border-b border-black pb-2 mb-2 text-sm">
-                                        <div className="w-2/3">
-                                            <p><span className="font-bold">Cliente:</span> {order.clientName}</p>
-                                            <p><span className="font-bold">Cidade/UF:</span> {order.clientCity} - {order.clientState}</p>
-                                        </div>
-                                        <div className="text-right w-1/3">
-                                            <p><span className="font-bold">Pedido:</span> #{order.id.slice(-6).toUpperCase()}</p>
-                                            <p><span className="font-bold">Rep:</span> {order.repName}</p>
-                                            <p><span className="font-bold">Entrega:</span> {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString() : '-'}</p>
-                                        </div>
+                                        <div className="w-2/3"><p><span className="font-bold">Cliente:</span> {order.clientName}</p><p><span className="font-bold">Cidade/UF:</span> {order.clientCity} - {order.clientState}</p></div>
+                                        <div className="text-right w-1/3"><p><span className="font-bold">Pedido:</span> #{order.id.slice(-6).toUpperCase()}</p><p><span className="font-bold">Rep:</span> {order.repName}</p><p><span className="font-bold">Entrega:</span> {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString() : '-'}</p></div>
                                     </div>
-                                    
                                     <table className="w-full text-xs text-center border-collapse border border-black table-fixed">
-                                        <thead className="bg-gray-200">
-                                            <tr>
-                                                <th className="border border-black p-1 w-16">Ref</th>
-                                                <th className="border border-black p-1 text-left w-auto">Cor</th>
-                                                {ALL_SIZES.map(s => <th key={s} className="border border-black p-1 w-8">{s}</th>)}
-                                                <th className="border border-black p-1 w-10 font-bold">Qtd</th>
-                                            </tr>
-                                        </thead>
+                                        <thead className="bg-gray-200"><tr><th className="border border-black p-1 w-16">Ref</th><th className="border border-black p-1 text-left w-auto">Cor</th>{ALL_SIZES.map(s => <th key={s} className="border border-black p-1 w-8">{s}</th>)}<th className="border border-black p-1 w-10 font-bold">Qtd</th></tr></thead>
                                         <tbody>
                                             {order.items.map((item, idx) => {
                                                  const rowTotal = Object.values(item.qtd).reduce((a,b)=>a+Number(b),0);
                                                 return (
                                                     <tr key={idx}>
-                                                        <td className="border border-black p-1 font-bold">{item.ref}</td>
-                                                        <td className="border border-black p-1 text-left truncate">{item.color}</td>
-                                                        {ALL_SIZES.map(s => (
-                                                            <td key={s} className="border border-black p-1">
-                                                                {item.qtd[s] ? <span className="font-bold">{item.qtd[s]}</span> : <span className="text-gray-300">-</span>}
-                                                            </td>
-                                                        ))}
+                                                        <td className="border border-black p-1 font-bold">{item.ref}</td><td className="border border-black p-1 text-left truncate">{item.color}</td>
+                                                        {ALL_SIZES.map(s => <td key={s} className="border border-black p-1">{item.qtd[s] ? <span className="font-bold">{item.qtd[s]}</span> : <span className="text-gray-300">-</span>}</td>)}
                                                         <td className="border border-black p-1 font-bold bg-gray-100">{rowTotal}</td>
                                                     </tr>
                                                 )
                                             })}
                                         </tbody>
                                     </table>
-                                    
-                                    <div className="mt-2 flex gap-4 text-xs">
-                                        <div className="flex-1 border border-black p-1 h-12"><strong>Obs:</strong> {order.notes}</div>
-                                        <div className="w-32 border border-black p-1 flex flex-col justify-center text-center">
-                                            <span className="font-bold text-lg">{order.items.reduce((acc, i) => acc + Object.values(i.qtd).reduce((a,b)=>a+b,0), 0)}</span>
-                                            <span>Peças Totais</span>
-                                        </div>
-                                    </div>
+                                    <div className="mt-2 flex gap-4 text-xs"><div className="flex-1 border border-black p-1 h-12"><strong>Obs:</strong> {order.notes}</div><div className="w-32 border border-black p-1 flex flex-col justify-center text-center"><span className="font-bold text-lg">{order.items.reduce((acc, i) => acc + Object.values(i.qtd).reduce((a,b)=>a+b,0), 0)}</span><span>Peças Totais</span></div></div>
                                 </div>
                             ))}
                         </div>
@@ -643,25 +560,10 @@ const AdminDashboard = () => {
               <Card className="border-t-4 border-blue-500">
                   <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Search size={20} className="text-blue-500"/> Análise de Cores por Referência</h3>
                   <div className="flex gap-4 items-end mb-6">
-                      <div className="flex-1">
-                          <label className="text-sm font-semibold text-gray-700">Digite a Referência</label>
-                          <input className="border p-2 rounded w-full" placeholder="Ex: 1050" value={reportRef} onChange={e => setReportRef(e.target.value)} />
-                      </div>
+                      <div className="flex-1"><label className="text-sm font-semibold text-gray-700">Digite a Referência</label><input className="border p-2 rounded w-full" placeholder="Ex: 1050" value={reportRef} onChange={e => setReportRef(e.target.value)} /></div>
                   </div>
                   {reportRef && refAnalysis.length > 0 && (
-                      <div className="space-y-2">
-                          <h4 className="font-bold text-sm text-gray-600">Ranking de Cores:</h4>
-                          {refAnalysis.map(([color, total], idx) => (
-                              <div key={color} className="flex items-center gap-4 bg-gray-50 p-2 rounded">
-                                  <span className="font-bold text-lg text-blue-600 w-8">#{idx+1}</span>
-                                  <div className="flex-1">
-                                      <p className="font-bold">{color}</p>
-                                      <div className="w-full bg-gray-200 h-2 rounded mt-1"><div className="bg-blue-500 h-2 rounded" style={{ width: `${(total / refAnalysis[0][1]) * 100}%` }}></div></div>
-                                  </div>
-                                  <span className="font-bold text-gray-800">{total} pçs</span>
-                              </div>
-                          ))}
-                      </div>
+                      <div className="space-y-2"><h4 className="font-bold text-sm text-gray-600">Ranking de Cores:</h4>{refAnalysis.map(([color, total], idx) => (<div key={color} className="flex items-center gap-4 bg-gray-50 p-2 rounded"><span className="font-bold text-lg text-blue-600 w-8">#{idx+1}</span><div className="flex-1"><p className="font-bold">{color}</p><div className="w-full bg-gray-200 h-2 rounded mt-1"><div className="bg-blue-500 h-2 rounded" style={{ width: `${(total / refAnalysis[0][1]) * 100}%` }}></div></div></div><span className="font-bold text-gray-800">{total} pçs</span></div>))}</div>
                   )}
               </Card>
               <Card className="border-t-4 border-green-500">
@@ -673,10 +575,7 @@ const AdminDashboard = () => {
                   </div>
                   {dateRangeConsolidated && dateRangeConsolidated.length > 0 ? (
                       <div className="overflow-x-auto">
-                          <div className="print:block hidden mb-4">
-                              <h1 className="text-xl font-bold">Relatório Consolidado</h1>
-                              <p>Período: {new Date(dateRange.start).toLocaleDateString()} até {new Date(dateRange.end).toLocaleDateString()}</p>
-                          </div>
+                          <div className="print:block hidden mb-4"><h1 className="text-xl font-bold">Relatório Consolidado</h1><p>Período: {new Date(dateRange.start).toLocaleDateString()} até {new Date(dateRange.end).toLocaleDateString()}</p></div>
                           <table className="w-full text-sm text-center border">
                               <thead className="bg-gray-800 text-white"><tr><th className="p-2 text-left">Ref</th><th className="p-2 text-left">Cor</th>{ALL_SIZES.map(s => <th key={s} className="p-2 w-10">{s}</th>)}<th className="p-2 font-bold bg-gray-900">Total</th></tr></thead>
                               <tbody className="divide-y">
