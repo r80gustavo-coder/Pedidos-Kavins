@@ -1,14 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
-// ==================================================================================
-// ⚠️ INSTRUÇÕES PARA VERCEL (PRODUÇÃO)
-// Quando for subir para o GitHub/Vercel, faça o seguinte neste arquivo:
-// 1. DESCOMENTE a linha do 'import { createClient } ...' abaixo.
-// 2. DESCOMENTE a linha 'const supabase = createClient(...)' na seção de Configuração.
-// 3. COMENTE ou APAGUE todo o bloco 'const supabase = { ... }' (Mock) lá embaixo.
-// ==================================================================================
-
-// PASSO 1: Descomente esta linha para o Vercel
+// --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
  import { createClient } from '@supabase/supabase-js';
 
 import { 
@@ -24,9 +16,11 @@ import {
 const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// PASSO 2: Descomente esta linha para o Vercel (Conexão Real)
-// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// --- OPÇÃO A: MODO PRODUÇÃO (Para Vercel/Supabase Real) ---
+// 1. Descomente a linha abaixo.
+// 2. Comente ou apague o bloco da "OPÇÃO B".
 
+// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
 
@@ -78,6 +72,13 @@ const Input = ({ label, ...props }) => (
   </div>
 );
 
+// Função auxiliar para formatar data com segurança
+const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
+};
+
 // =========================================================
 // --- 4. TELA DE LOGIN ---
 // =========================================================
@@ -103,28 +104,19 @@ const LoginScreen = ({ onLogin }) => {
             return;
         }
 
-        // 2. Verifica Representantes (Fallback compatível com Mock e Real)
-        // Quando estiver no REAL, o .maybeSingle() funcionará corretamente.
-        // No MOCK, ele retornará array ou null dependendo da implementação.
-        const query = supabase
+        // 2. Verifica Representantes
+        const { data, error } = await supabase
             .from('users')
             .select('*')
             .eq('username', cleanUser) 
-            .eq('password', cleanPass);
+            .eq('password', cleanPass)
+            .maybeSingle ? await supabase.from('users').select('*').eq('username', cleanUser).eq('password', cleanPass).maybeSingle() : { data: null }; // Mock fallback
         
-        const { data, error } = query.maybeSingle ? await query.maybeSingle() : await query; // Adaptador Mock/Real
-        
-        // Tratamento para o Mock que retorna array
-        const userFound = Array.isArray(data) ? data[0] : data;
-        
-        // Se não achou na tabela 'users', tenta via Auth (caso use Auth do Supabase)
+        // Fallback para o Mock
+        let userFound = data;
         if (!userFound && supabase.auth.signInWithPassword.toString().includes('MOCK')) {
-             // Só chama mock auth se tabela falhar
              const res = await supabase.auth.signInWithPassword({ email: cleanUser, password: cleanPass });
-             if(res.user) {
-                 onLogin(res.user);
-                 return;
-             }
+             if(res.user) userFound = res.user;
         }
 
         if (userFound) {
@@ -133,7 +125,7 @@ const LoginScreen = ({ onLogin }) => {
              setError('Usuário ou senha incorretos.');
         }
     } catch (e) {
-        setError('Erro inesperado. Verifique conexão.');
+        setError('Erro inesperado.');
         console.error(e);
     } finally {
         setIsLoading(false);
@@ -145,23 +137,10 @@ const LoginScreen = ({ onLogin }) => {
       <Card className="w-full max-w-md">
         <h2 className="text-2xl font-bold text-center text-blue-900 mb-6">Gestão de Confecção</h2>
         <form onSubmit={handleLogin}>
-          <Input 
-            label="Usuário / Email" 
-            value={email} 
-            onChange={e => setEmail(e.target.value)} 
-            placeholder="Ex: joao"
-          />
-          <Input 
-            label="Senha" 
-            type="password" 
-            value={password} 
-            onChange={e => setPassword(e.target.value)} 
-            placeholder="Sua senha"
-          />
+          <Input label="Usuário / Email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Ex: joao" />
+          <Input label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Sua senha" />
           {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'Entrando...' : 'Entrar'}
-          </Button>
+          <Button type="submit" className="w-full" disabled={isLoading}>{isLoading ? 'Entrando...' : 'Entrar'}</Button>
         </form>
       </Card>
     </div>
@@ -169,7 +148,7 @@ const LoginScreen = ({ onLogin }) => {
 };
 
 // =========================================================
-// --- 5. COMPONENTE DE ESTATÍSTICAS ---
+// --- 5. DASHBOARD STATS ---
 // =========================================================
 
 const DashboardStats = ({ orders, title }) => {
@@ -181,10 +160,9 @@ const DashboardStats = ({ orders, title }) => {
 
     orders.forEach(order => {
       let items = [];
-      // Parse seguro para JSONB ou Array
       if (Array.isArray(order.items)) items = order.items;
       else if (typeof order.items === 'string') {
-          try { items = JSON.parse(order.items); } catch(e){ items = []; }
+          try { items = JSON.parse(order.items); } catch(e) { items = []; }
       }
 
       items.forEach(item => {
@@ -279,7 +257,7 @@ const AdminDashboard = () => {
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [newProd, setNewProd] = useState({ ref: '', color: '', grade: 'STD' });
 
-  // --- Carregamento de Dados ---
+  // --- Carregamento de Dados (SUPABASE) ---
   const fetchAllData = useCallback(async () => {
     const { data: usersData } = await supabase.from('users').select('*');
     setUsers(usersData || []);
@@ -288,14 +266,18 @@ const AdminDashboard = () => {
     setProducts(productsData || []);
 
     const { data: ordersData } = await supabase.from('orders').select('*');
-    // Normaliza items (JSON.parse seguro)
+    
+    // Mapeia dados e CORRIGE O NOME DA COLUNA DE DATA
     const parsedOrders = (ordersData || []).map(order => {
         let items = [];
         if(Array.isArray(order.items)) items = order.items;
         else if(typeof order.items === 'string') {
             try { items = JSON.parse(order.items); } catch(e){ items = []; }
         }
-        return { ...order, items };
+        // IMPORTANTE: Mapeia created_at (do banco) para createdAt (do app)
+        // Se createdAt já existir (Mock), mantém.
+        const createdAt = order.created_at || order.createdAt; 
+        return { ...order, items, createdAt };
     });
     setOrders(parsedOrders);
   }, []);
@@ -304,31 +286,25 @@ const AdminDashboard = () => {
     fetchAllData();
   }, [fetchAllData, view]);
 
-  // --- Handlers ---
+
+  // --- Ações do Admin ---
   const addUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) return alert('Preencha todos os campos');
     
-    // Verifica duplicidade (se não for mock)
     if(!supabase.auth.toString().includes('MOCK')) {
          const { data: existing } = await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle();
          if (existing) return alert('Erro: Este nome de usuário já existe.');
     }
 
     const { error } = await supabase.from('users').insert(newUser);
-    if (error) {
-        alert('Erro ao cadastrar: ' + error.message);
-    } else {
-        alert('Representante cadastrado!');
-        fetchAllData(); 
-        setNewUser({ name: '', username: '', password: '' });
-    }
+    if (error) alert('Erro ao cadastrar: ' + error.message);
+    else { alert('Cadastrado!'); fetchAllData(); setNewUser({ name: '', username: '', password: '' }); }
   };
 
   const removeUser = async (id) => {
     if (confirm('Tem certeza?')) {
       const { error } = await supabase.from('users').delete().eq('id', id); 
-      if (error) alert('Erro ao deletar: ' + error.message);
-      else fetchAllData(); 
+      if (error) alert('Erro: ' + error.message); else fetchAllData(); 
     }
   };
 
@@ -341,22 +317,16 @@ const AdminDashboard = () => {
 
   const removeProduct = async (id) => {
     const { error } = await supabase.from('products').delete().eq('id', id); 
-    if (error) alert('Erro ao deletar.');
-    else fetchAllData();
+    if (error) alert('Erro ao deletar.'); else fetchAllData();
   };
 
   const toggleOrderSelection = (orderId) => {
-    if (selectedOrdersForReport.includes(orderId)) {
-      setSelectedOrdersForReport(selectedOrdersForReport.filter(id => id !== orderId));
-    } else {
-      setSelectedOrdersForReport([...selectedOrdersForReport, orderId]);
-    }
+    if (selectedOrdersForReport.includes(orderId)) setSelectedOrdersForReport(selectedOrdersForReport.filter(id => id !== orderId));
+    else setSelectedOrdersForReport([...selectedOrdersForReport, orderId]);
   };
 
   const markAsPrinted = async (orderIds) => {
-    const promises = orderIds.map(id => 
-        supabase.from('orders').update({ status: 'Impresso' }).eq('id', id)
-    );
+    const promises = orderIds.map(id => supabase.from('orders').update({ status: 'Impresso' }).eq('id', id));
     await Promise.all(promises);
     fetchAllData();
   };
@@ -376,7 +346,7 @@ const AdminDashboard = () => {
       return Object.entries(stats).sort(([,a], [,b]) => b - a);
   }, [orders, reportRef]);
 
-  // --- FIX: Relatório por Data (String comparison) ---
+  // --- FIX: Relatório por Data ---
   const dateRangeConsolidated = useMemo(() => {
       if(!dateRange.start || !dateRange.end) return null;
       
@@ -384,8 +354,8 @@ const AdminDashboard = () => {
       const endStr = dateRange.end;
       
       const filteredOrders = orders.filter(o => {
-          if (!o.createdAt) return false;
-          // Pega os primeiros 10 caracteres (YYYY-MM-DD) independente de fuso
+          // Usa createdAt mapeado
+          if (!o.createdAt) return false; 
           const orderDate = o.createdAt.substring(0, 10);
           return orderDate >= startStr && orderDate <= endStr;
       });
@@ -429,7 +399,7 @@ const AdminDashboard = () => {
           <Card>
             <h3 className="font-bold text-lg mb-4">Cadastrar Representante</h3>
             <Input label="Nome Completo" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-            <Input label="Usuário" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+            <Input label="Usuário de Acesso" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
             <Input label="Senha" type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
             <Button onClick={addUser} className="w-full">Cadastrar</Button>
           </Card>
@@ -492,7 +462,6 @@ const AdminDashboard = () => {
                 </Button>
             </div>
           </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1 space-y-4 print:hidden">
               <Card className="max-h-screen overflow-y-auto">
@@ -500,26 +469,21 @@ const AdminDashboard = () => {
                     <span className="font-bold text-gray-700">Selecione para Imprimir</span>
                     <button className="text-xs text-blue-600 underline" onClick={() => setSelectedOrdersForReport([])}>Limpar</button>
                  </div>
-                 {orders.slice().reverse().map(order => (
-                   <div key={order.id} className={`p-3 border rounded mb-2 cursor-pointer transition-colors ${selectedOrdersForReport.includes(order.id) ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50'}`} onClick={() => toggleOrderSelection(order.id)}>
+                 {orders.slice().reverse().map(o => (
+                   <div key={o.id} className={`p-3 border rounded mb-2 cursor-pointer transition-colors ${selectedOrdersForReport.includes(o.id) ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50'}`} onClick={() => toggleOrderSelection(o.id)}>
                      <div className="flex justify-between items-start">
-                        <div><p className="font-bold text-sm">#{order.id.slice(-6).toUpperCase()}</p><p className="text-xs text-gray-500">{order.clientName}</p><p className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString()}</p></div>
-                        <div className="text-right"><span className={`text-xs px-2 py-1 rounded-full ${order.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{order.status}</span><p className="text-xs font-bold mt-1 text-gray-600">{order.repName}</p></div>
+                        <div><p className="font-bold text-sm">#{o.id.slice(-6).toUpperCase()}</p><p className="text-xs text-gray-500">{o.clientName}</p><p className="text-xs text-gray-400">{formatDate(o.createdAt)}</p></div>
+                        <div className="text-right"><span className={`text-xs px-2 py-1 rounded-full ${o.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{o.status}</span><p className="text-xs font-bold mt-1 text-gray-600">{o.repName}</p></div>
                      </div>
                    </div>
                  ))}
               </Card>
             </div>
-
             <div className="lg:col-span-2">
                 <Card className="print:shadow-none print:border-none print:p-0">
-                    <div className="hidden print:block mb-4 border-b pb-2">
-                        <h1 className="text-xl font-bold">Relatório de Separação de Pedidos</h1>
-                        <p className="text-sm text-gray-600">Impresso em: {new Date().toLocaleString()}</p>
-                    </div>
-
+                    <div className="hidden print:block mb-4 border-b pb-2"><h1 className="text-xl font-bold">Relatório de Separação</h1><p className="text-sm text-gray-600">Impresso em: {new Date().toLocaleString()}</p></div>
                     {selectedOrdersForReport.length === 0 ? (
-                        <div className="text-center text-gray-400 py-10 print:hidden">Selecione pedidos ao lado para ver e imprimir.</div>
+                        <div className="text-center text-gray-400 py-10 print:hidden">Selecione pedidos ao lado.</div>
                     ) : (
                         <div className="print:w-full">
                             {orders.filter(o => selectedOrdersForReport.includes(o.id)).map((order, orderIdx) => (
@@ -532,18 +496,18 @@ const AdminDashboard = () => {
                                         <thead className="bg-gray-200"><tr><th className="border border-black p-1 w-16">Ref</th><th className="border border-black p-1 text-left w-auto">Cor</th>{ALL_SIZES.map(s => <th key={s} className="border border-black p-1 w-8">{s}</th>)}<th className="border border-black p-1 w-10 font-bold">Qtd</th></tr></thead>
                                         <tbody>
                                             {order.items.map((item, idx) => {
-                                                 const rowTotal = Object.values(item.qtd).reduce((a,b)=>a+Number(b),0);
+                                                 const rowTotal = Object.values(item.qtd || {}).reduce((a,b)=>a+Number(b),0);
                                                 return (
                                                     <tr key={idx}>
                                                         <td className="border border-black p-1 font-bold">{item.ref}</td><td className="border border-black p-1 text-left truncate">{item.color}</td>
-                                                        {ALL_SIZES.map(s => <td key={s} className="border border-black p-1">{item.qtd[s] ? <span className="font-bold">{item.qtd[s]}</span> : <span className="text-gray-300">-</span>}</td>)}
+                                                        {ALL_SIZES.map(s => <td key={s} className="border border-black p-1">{item.qtd && item.qtd[s] ? <span className="font-bold">{item.qtd[s]}</span> : <span className="text-gray-300">-</span>}</td>)}
                                                         <td className="border border-black p-1 font-bold bg-gray-100">{rowTotal}</td>
                                                     </tr>
                                                 )
                                             })}
                                         </tbody>
                                     </table>
-                                    <div className="mt-2 flex gap-4 text-xs"><div className="flex-1 border border-black p-1 h-12"><strong>Obs:</strong> {order.notes}</div><div className="w-32 border border-black p-1 flex flex-col justify-center text-center"><span className="font-bold text-lg">{order.items.reduce((acc, i) => acc + Object.values(i.qtd).reduce((a,b)=>a+b,0), 0)}</span><span>Peças Totais</span></div></div>
+                                    <div className="mt-2 flex gap-4 text-xs"><div className="flex-1 border border-black p-1 h-12"><strong>Obs:</strong> {order.notes}</div><div className="w-32 border border-black p-1 flex flex-col justify-center text-center"><span className="font-bold text-lg">{order.items.reduce((acc, i) => acc + Object.values(i.qtd || {}).reduce((a,b)=>a+b,0), 0)}</span><span>Peças Totais</span></div></div>
                                 </div>
                             ))}
                         </div>
@@ -586,7 +550,7 @@ const AdminDashboard = () => {
                               </tbody>
                           </table>
                       </div>
-                  ) : <p className="text-gray-400 text-center py-4">Selecione as datas para gerar o relatório.</p>}
+                  ) : <p className="text-gray-400 text-center py-4">Selecione as datas.</p>}
               </Card>
           </div>
       )}
@@ -605,273 +569,118 @@ const RepDashboard = ({ user }) => {
   const [products, setProducts] = useState([]); 
   const [clientFilter, setClientFilter] = useState(''); 
   
-  const [currentOrder, setCurrentOrder] = useState({
-    clientId: '',
-    clientName: '',
-    clientCity: '',
-    clientState: '',
-    clientNeighborhood: '',
-    deliveryDate: '',
-    payment: '',
-    items: [], 
-    notes: ''
-  });
-
+  const [currentOrder, setCurrentOrder] = useState({ clientId: '', clientName: '', clientCity: '', deliveryDate: '', payment: '', items: [], notes: '' });
   const [inputLine, setInputLine] = useState({ ref: '', grade: null, color: '', qtds: { P: '', M: '', G: '', GG: '', G1: '', G2: 'r', G3: '' } });
-  const [availableColors, setAvailableColors] = useState([]);
-  const [newClient, setNewClient] = useState({ name: '', city: '', neighborhood: '', state: '' });
-  const [showClientModal, setShowClientModal] = useState(false);
   
   const fetchRepData = useCallback(async () => {
-    const { data: ordersData } = await supabase.from('orders').select('*').eq('repId', user.id);
-    const parsedOrders = (ordersData || []).map(order => ({
-        ...order,
-        items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
-    }));
-    setOrders(parsedOrders);
-
-    const { data: clientsData } = await supabase.from('clients').select('*').eq('repId', user.id);
-    setClients(clientsData || []);
+    const { data: ord } = await supabase.from('orders').select('*').eq('repId', user.id);
+    // Map created_at to createdAt
+    setOrders((ord || []).map(o => ({...o, items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items, createdAt: o.created_at || o.createdAt })));
     
-    const { data: productsData } = await supabase.from('products').select('*');
-    setProducts(productsData || []);
+    const { data: cli } = await supabase.from('clients').select('*').eq('repId', user.id);
+    setClients(cli || []);
+    
+    const { data: prod } = await supabase.from('products').select('*');
+    setProducts(prod || []);
   }, [user.id]);
 
   useEffect(() => { fetchRepData(); }, [fetchRepData, view]);
 
-  const filteredOrders = useMemo(() => {
-      if(!clientFilter) return orders;
-      return orders.filter(o => o.clientName.toLowerCase().includes(clientFilter.toLowerCase()));
-  }, [orders, clientFilter]);
-
-  // Lógica de Pedidos do Representante
-  const handleRefChange = (val) => {
-    let detectedGrade = null;
-    let colors = [];
-    if(val) {
-        const matchingProds = products.filter(p => p.ref === val);
-        if (matchingProds.length > 0) detectedGrade = matchingProds[0].grade;
-        colors = [...new Set(matchingProds.map(p => p.color))];
-    }
-    setAvailableColors(colors);
-    setInputLine(prev => ({ ...prev, ref: val, grade: detectedGrade }));
-  };
-
-  const handleAddClient = async () => {
-    if (!newClient.name) return alert('Nome obrigatório');
-    const clientData = { ...newClient, repId: user.id };
-    const { data, error } = await supabase.from('clients').insert(clientData).select().single();
-    if (error) { alert('Erro ao salvar cliente: ' + error.message); } 
-    else {
-        fetchRepData(); 
-        setCurrentOrder({ ...currentOrder, clientId: data.id, clientName: data.name, clientCity: data.city, clientState: data.state, clientNeighborhood: data.neighborhood });
-        setShowClientModal(false);
-        setNewClient({ name: '', city: '', neighborhood: '', state: '' });
-    }
-  };
-
-  const handleAddItem = (e) => {
-    if (e && e.key !== 'Enter') return; 
-    if (!inputLine.ref || !inputLine.color) return alert('Preencha Ref e Cor');
-    const quantities = {};
-    let hasQtd = false;
-    ALL_SIZES.forEach(size => {
-        let isValidSize = true;
-        if (inputLine.grade === 'STD' && SIZES_PLUS.includes(size)) isValidSize = false;
-        if (inputLine.grade === 'PLUS' && SIZES_STD.includes(size)) isValidSize = false;
-        if(isValidSize && inputLine.qtds[size]) {
-            quantities[size] = Number(inputLine.qtds[size]);
-            hasQtd = true;
-        }
-    });
-    if (!hasQtd) return alert('Informe ao menos uma quantidade válida');
-    const newItem = { ref: inputLine.ref, color: inputLine.color, qtd: quantities, id: Date.now() };
-    setCurrentOrder({ ...currentOrder, items: [...currentOrder.items, newItem] });
-    setInputLine(prev => ({ ...prev, color: '', qtds: { P: '', M: '', G: '', GG: '', G1: '', G2: '', G3: '' } }));
-    document.getElementById('input-color')?.focus();
-  };
-
-  const removeItem = (itemId) => { setCurrentOrder({ ...currentOrder, items: currentOrder.items.filter(i => i.id !== itemId) }); };
-
-  const editItem = (item) => {
-      const newQtds = { P: '', M: '', G: '', GG: '', G1: '', G2: '', G3: '' };
-      Object.keys(item.qtd).forEach(k => newQtds[k] = item.qtd[k]);
-      setInputLine({ ref: item.ref, color: item.color, grade: null, qtds: newQtds });
-      handleRefChange(item.ref);
-      removeItem(item.id);
-      setTimeout(() => document.getElementById('input-ref')?.focus(), 100);
+  const handleAddItem = () => {
+      if (!inputLine.ref || !inputLine.color) return;
+      const quantities = {};
+      ALL_SIZES.forEach(s => { if(inputLine.qtds[s]) quantities[s] = Number(inputLine.qtds[s]); });
+      if(Object.keys(quantities).length === 0) return;
+      
+      setCurrentOrder(prev => ({ ...prev, items: [...prev.items, { ref: inputLine.ref, color: inputLine.color, qtd: quantities, id: Date.now() }] }));
+      setInputLine(prev => ({ ...prev, color: '', qtds: { P: '', M: '', G: '', GG: '', G1: '', G2: '', G3: '' } }));
+      document.getElementById('rep-input-color')?.focus();
   };
 
   const saveOrder = async () => {
-    if (!currentOrder.clientId || currentOrder.items.length === 0) return alert('Selecione cliente e adicione itens');
-    
-    const finalOrder = {
-      repId: user.id,
-      repName: user.name,
-      clientId: currentOrder.clientId,
-      clientName: currentOrder.clientName,
-      clientCity: currentOrder.clientCity,
-      clientState: currentOrder.clientState,
-      deliveryDate: currentOrder.deliveryDate,
-      payment: currentOrder.payment,
-      notes: currentOrder.notes,
-      status: 'Pendente',
-      items: JSON.stringify(currentOrder.items) 
-    };
-    
-    const { error } = await supabase.from('orders').insert(finalOrder); 
-
-    if (error) {
-        alert('Erro ao salvar pedido: ' + error.message);
-    } else {
-        alert('Pedido Salvo com Sucesso!');
-        fetchRepData();
-        setView('list');
-        setCurrentOrder({ clientId: '', clientName: '', clientCity: '', clientState: '', deliveryDate: '', payment: '', items: [], notes: '' });
-    }
+      if(!currentOrder.clientId || !currentOrder.items.length) return alert('Preencha tudo');
+      const finalOrder = {
+          repId: user.id, repName: user.name,
+          ...currentOrder,
+          status: 'Pendente',
+          items: JSON.stringify(currentOrder.items),
+          // USE created_at para compatibilidade com DB
+          created_at: new Date().toISOString() 
+      };
+      await supabase.from('orders').insert(finalOrder);
+      alert('Sucesso'); fetchRepData(); setView('list'); setCurrentOrder({ clientId: '', clientName: '', items: [], notes: '' });
   };
 
   return (
-    <div className="p-4 max-w-6xl mx-auto">
-       <div className="flex gap-4 mb-6 overflow-x-auto pb-2">
-            <Button variant={view === 'dashboard' ? 'primary' : 'secondary'} onClick={() => setView('dashboard')}>Dashboard</Button>
-            <Button variant={view === 'list' ? 'primary' : 'secondary'} onClick={() => setView('list')}>Meus Pedidos</Button>
-            <Button variant={view === 'new' ? 'success' : 'secondary'} onClick={() => setView('new')}>+ Novo Pedido</Button>
-      </div>
-
-      {view === 'dashboard' && <DashboardStats orders={orders} title={`Dashboard - ${user.name}`} />}
-
-      {view === 'list' && (
-        <Card>
-            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-                <h2 className="text-xl font-bold">Histórico de Pedidos</h2>
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                    <Filter size={18} className="text-gray-500"/>
-                    <input className="border p-2 rounded text-sm w-full md:w-64" placeholder="Filtrar por cliente..." value={clientFilter} onChange={e => setClientFilter(e.target.value)} />
-                </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50"><tr><th className="p-3">Data</th><th className="p-3">Pedido ID</th><th className="p-3">Cliente</th><th className="p-3 text-center">Itens</th><th className="p-3">Status</th></tr></thead>
-                <tbody className="divide-y">
-                  {filteredOrders.slice().reverse().map(o => (
-                    <tr key={o.id}>
-                      <td className="p-3">{new Date(o.createdAt).toLocaleDateString()}</td>
-                      <td className="p-3 font-mono text-xs">...{o.id.slice(-6)}</td>
-                      <td className="p-3 font-bold">{o.clientName}</td>
-                      <td className="p-3 text-center">{o.items.length} refs</td>
-                      <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${o.status === 'Impresso' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{o.status}</span></td>
-                    </tr>
-                  ))}
-                  {filteredOrders.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-gray-500">Nenhum pedido encontrado.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-        </Card>
-      )}
-
-      {view === 'new' && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-             <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700"><ChevronRight className="rotate-180"/></button>
-             <h2 className="text-xl font-bold">Novo Pedido</h2>
+      <div className="p-4">
+          <div className="flex gap-2 mb-4 overflow-x-auto">
+              <Button onClick={()=>setView('dashboard')}>Dash</Button><Button onClick={()=>setView('list')}>Pedidos</Button><Button onClick={()=>setView('new')}>Novo</Button>
           </div>
+          
+          {view === 'dashboard' && <DashboardStats orders={orders} title="Meu Painel" />}
+          
+          {view === 'list' && (
+              <Card>
+                  <h3 className="font-bold mb-4">Meus Pedidos</h3>
+                  {orders.slice().reverse().map(o => (
+                      <div key={o.id} className="border-b py-2 flex justify-between">
+                          <div><span className="font-bold">{o.clientName}</span> <span className="text-xs text-gray-500">{formatDate(o.createdAt)}</span></div>
+                          <div>{o.items.length} itens - {o.status}</div>
+                      </div>
+                  ))}
+              </Card>
+          )}
 
-          <Card className="border-l-4 border-blue-500">
-             <div className="flex justify-between items-start mb-4">
-                <h3 className="font-bold">Dados do Cliente</h3>
-                <button onClick={() => setShowClientModal(true)} className="text-sm text-blue-600 underline">+ Novo Cliente</button>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm text-gray-600 mb-1">Selecione o Cliente</label>
-                    <select className="w-full border p-2 rounded" value={currentOrder.clientId} onChange={(e) => {
-                            const c = clients.find(cl => cl.id == e.target.value);
-                            if(c) setCurrentOrder({ ...currentOrder, clientId: c.id, clientName: c.name, clientCity: c.city, clientState: c.state, clientNeighborhood: c.neighborhood });
-                        }}>
-                        <option value="">-- Selecione --</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                </div>
-                <div><label className="block text-sm text-gray-600 mb-1">Data de Entrega</label><input type="date" className="w-full border p-2 rounded" value={currentOrder.deliveryDate} onChange={e => setCurrentOrder({...currentOrder, deliveryDate: e.target.value})} /></div>
-                <div className="md:col-span-2"><label className="block text-sm text-gray-600 mb-1">Forma de Pagamento</label><input className="w-full border p-2 rounded" placeholder="Ex: 30/60 dias" value={currentOrder.payment} onChange={e => setCurrentOrder({...currentOrder, payment: e.target.value})} /></div>
-             </div>
-             {showClientModal && (
-                 <div className="mt-4 p-4 bg-gray-50 rounded border animate-in fade-in">
-                     <h4 className="font-bold text-sm mb-2">Novo Cliente Rápido</h4>
-                     <div className="grid grid-cols-2 gap-2 mb-2">
-                        <input className="border p-1 rounded" placeholder="Nome" value={newClient.name} onChange={e=>setNewClient({...newClient, name: e.target.value})}/>
-                        <input className="border p-1 rounded" placeholder="Cidade" value={newClient.city} onChange={e=>setNewClient({...newClient, city: e.target.value})}/>
-                        <input className="border p-1 rounded" placeholder="Bairro" value={newClient.neighborhood} onChange={e=>setNewClient({...newClient, neighborhood: e.target.value})}/>
-                        <input className="border p-1 rounded" placeholder="Estado (UF)" value={newClient.state} onChange={e=>setNewClient({...newClient, state: e.target.value})}/>
-                     </div>
-                     <Button onClick={handleAddClient} size="sm">Salvar Cliente</Button>
-                 </div>
-             )}
-          </Card>
-
-          <Card className="border-l-4 border-green-500">
-             <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2"><h3 className="font-bold">Adicionar Itens</h3>{inputLine.grade && (<span className={`text-xs px-2 py-1 rounded font-bold ${inputLine.grade === 'STD' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{inputLine.grade === 'STD' ? 'Grade Normal' : 'Grade Plus'}</span>)}</div>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{inputLine.grade ? 'Grade bloqueada automaticamente' : 'Digite a Ref para bloquear a grade'}</span>
-             </div>
-             
-             <div className="bg-gray-100 p-2 rounded-t flex gap-2 text-sm font-bold text-gray-700">
-                <div className="w-24">Ref</div><div className="w-40">Cor</div>{ALL_SIZES.map(s => <div key={s} className="flex-1 text-center">{s}</div>)}<div className="w-10"></div>
-             </div>
-
-             <div className="flex gap-2 mb-2 p-2 border border-t-0 rounded-b bg-white shadow-sm" onKeyDown={(e) => { if(e.key === 'Enter') handleAddItem(); }}>
-                <div className="w-24"><input id="input-ref" className="w-full border p-1 rounded h-9 font-bold" placeholder="Ref" value={inputLine.ref} onChange={e => handleRefChange(e.target.value)} /></div>
-                <div className="w-40 relative">
-                    <input id="input-color" list="colors-list" className="w-full border p-1 rounded h-9" placeholder="Cor" value={inputLine.color} onChange={e => setInputLine({...inputLine, color: e.target.value})} />
-                    {availableColors.length > 0 && <datalist id="colors-list">{availableColors.map(c => <option key={c} value={c} />)}</datalist>}
-                </div>
-                {ALL_SIZES.map(size => {
-                    let isDisabled = false;
-                    if (inputLine.grade === 'STD' && SIZES_PLUS.includes(size)) isDisabled = true;
-                    if (inputLine.grade === 'PLUS' && SIZES_STD.includes(size)) isDisabled = true;
-                    return (<div key={size} className="flex-1"><input type="number" disabled={isDisabled} className={`w-full border p-1 rounded text-center h-9 focus:bg-blue-50 focus:border-blue-500 ${isDisabled ? 'bg-gray-200 cursor-not-allowed' : ''}`} value={isDisabled ? '' : inputLine.qtds[size]} onChange={e => setInputLine({...inputLine, qtds: {...inputLine.qtds, [size]: e.target.value}})} /></div>);
-                })}
-                <div className="w-10 flex justify-center items-center"><button onClick={handleAddItem} className="bg-green-600 text-white rounded-full p-1 hover:bg-green-700 shadow"><Check size={16}/></button></div>
-             </div>
-
-             <div className="overflow-x-auto border rounded mt-4">
-                <table className="w-full text-sm text-center table-fixed">
-                    <thead className="bg-gray-50"><tr><th className="p-2 text-left w-24">Ref</th><th className="p-2 text-left w-40">Cor</th>{ALL_SIZES.map(s => <th key={s} className="p-2">{s}</th>)}<th className="p-2 w-16">Total</th><th className="p-2 w-16">Ações</th></tr></thead>
-                    <tbody className="divide-y">
-                        {currentOrder.items.map(item => {
-                             const total = Object.values(item.qtd).reduce((a,b) => a+b, 0);
-                             return (<tr key={item.id} className="hover:bg-gray-50 group"><td className="p-2 text-left font-bold truncate">{item.ref}</td><td className="p-2 text-left truncate">{item.color}</td>{ALL_SIZES.map(s => <td key={s} className="p-2 text-gray-600">{item.qtd[s] || '-'}</td>)}<td className="p-2 font-bold bg-blue-50 text-blue-800">{total}</td><td className="p-2 flex justify-center gap-2"><button onClick={() => editItem(item)} className="text-blue-500 hover:bg-blue-100 p-1 rounded"><Pencil size={16}/></button><button onClick={() => removeItem(item.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={16}/></button></td></tr>)
-                        })}
-                        {currentOrder.items.length === 0 && <tr><td colSpan="12" className="p-4 text-gray-400 text-sm">Nenhum item adicionado ao pedido ainda.</td></tr>}
-                    </tbody>
-                </table>
-             </div>
-          </Card>
-          <div className="flex gap-4"><Button onClick={saveOrder} className="flex-1 py-3 text-lg shadow-lg bg-green-600 hover:bg-green-700">Finalizar Pedido</Button></div>
-        </div>
-      )}
-    </div>
+          {view === 'new' && (
+              <div className="space-y-4">
+                  <Card>
+                      <h3 className="font-bold mb-2">Cliente</h3>
+                      <select className="border p-2 w-full rounded" value={currentOrder.clientId} onChange={e => {
+                          const c = clients.find(cl => cl.id == e.target.value);
+                          if(c) setCurrentOrder({...currentOrder, clientId: c.id, clientName: c.name, clientCity: c.city});
+                      }}>
+                          <option value="">Selecione...</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                  </Card>
+                  <Card>
+                      <h3 className="font-bold mb-2">Itens</h3>
+                      <div className="flex gap-2 mb-2">
+                          <input className="border p-1 w-20" placeholder="Ref" value={inputLine.ref} onChange={e=>setInputLine({...inputLine, ref:e.target.value})}/>
+                          <input id="rep-input-color" className="border p-1 w-28" placeholder="Cor" value={inputLine.color} onChange={e=>setInputLine({...inputLine, color:e.target.value})}/>
+                          {ALL_SIZES.map(s => <input key={s} className="border p-1 w-10 text-center" placeholder={s} value={inputLine.qtds[s]||''} onChange={e=>setInputLine({...inputLine, qtds:{...inputLine.qtds, [s]:e.target.value}})}/>)}
+                          <Button onClick={handleAddItem}><Plus/></Button>
+                      </div>
+                      <div className="border-t pt-2">
+                          {currentOrder.items.map(item => (
+                              <div key={item.id} className="text-sm flex justify-between border-b py-1">
+                                  <span>{item.ref} - {item.color}</span>
+                                  <span>{Object.values(item.qtd).reduce((a,b)=>a+b,0)} pçs</span>
+                              </div>
+                          ))}
+                      </div>
+                  </Card>
+                  <Button onClick={saveOrder} className="w-full py-3">Finalizar</Button>
+              </div>
+          )}
+      </div>
   );
 };
 
-// =========================================================
-// --- 8. COMPONENTE PRINCIPAL (APP) ---
-// =========================================================
-
 const App = () => {
   const [user, setUser] = useState(null);
-  const handleLogout = () => setUser(null);
+  // Limpa Mock se existir para garantir uso do Real se configurado
+  useEffect(() => { if(localStorage.getItem('temp_conf_users')) console.log("App loaded"); }, []);
 
   if (!user) return <LoginScreen onLogin={setUser} />;
-
+  
   return (
-    <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
-      <div className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center print:hidden sticky top-0 z-50">
-        <div className="flex items-center gap-2"><Package className="text-blue-400"/><h1 className="font-bold text-xl tracking-tight hidden md:block">Confecção Manager (Supabase Ready)</h1></div>
-        <div className="flex items-center gap-4"><span className="text-sm text-gray-300">Olá, <strong className="text-white">{user.name}</strong></span><button onClick={handleLogout} className="p-2 bg-slate-800 rounded hover:bg-slate-700 transition-colors" title="Sair"><LogOut size={18}/></button></div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      <div className="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-50">
+        <div className="flex items-center gap-2"><Package className="text-blue-400"/><span className="font-bold">Confecção Manager</span></div>
+        <button onClick={()=>setUser(null)} className="p-1 bg-slate-700 rounded"><LogOut size={16}/></button>
       </div>
-      <main className="pb-20 pt-6">
+      <main className="pb-20">
         {user.role === 'admin' ? <AdminDashboard /> : <RepDashboard user={user} />}
       </main>
     </div>
