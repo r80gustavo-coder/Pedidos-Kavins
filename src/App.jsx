@@ -94,6 +94,13 @@ const LoginScreen = ({ onLogin }) => {
             return;
         }
 
+        // --- ADMIN 2 (Novo) ---
+        // Basta duplicar o bloco e alterar os dados entre as aspas
+        if (cleanUser === 'bruno@gmail.com' && cleanPass === 'bruno123') {
+            onLogin({ id: 'admin-2', email: cleanUser, role: 'admin', name: 'Bruno' });
+            return;
+        }
+      
         // 2. Verifica Representantes (Tenta via Auth ou Tabela dependendo do modo)
         // No modo real, descomentar a lógica abaixo se usar tabela 'users' ao invés de auth nativo
         
@@ -997,4 +1004,5 @@ const App = () => {
 };
 
 export default App;
+
 
