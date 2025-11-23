@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
-// --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
+// --- PARA VERCEL (PRODUÇÃO): CONEXÃO ATIVA ---
 import { createClient } from '@supabase/supabase-js';
 
 import { 
@@ -16,11 +16,8 @@ import {
 const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// --- OPÇÃO A: MODO PRODUÇÃO (Para Vercel/Supabase Real) ---
-// 1. Descomente a linha do 'createClient' abaixo.
-// 2. Comente ou apague todo o bloco da OPÇÃO B (Mock).
-
- const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Inicializa a conexão real
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================
 // --- 2. CONSTANTES ---
@@ -88,38 +85,31 @@ const LoginScreen = ({ onLogin }) => {
     const cleanPass = password.trim();
 
     try {
-        // 1. Verifica se é o Admin (Hardcoded)
+        // 1. Verifica se é o Admin
         if (cleanUser === 'gustavo_benvindo80@hotmail.com' && cleanPass === 'Gustavor80') {
             onLogin({ id: 'admin-id', email: cleanUser, role: 'admin', name: 'Gustavo Admin' });
             return;
         }
 
-        // 2. Verifica Representantes (Tenta via Auth ou Tabela dependendo do modo)
-        // No modo real, descomentar a lógica abaixo se usar tabela 'users' ao invés de auth nativo
-        
+        // 2. Verifica Representantes
         const { data, error } = await supabase
             .from('users')
             .select('*')
             .eq('username', cleanUser) 
             .eq('password', cleanPass)
-            .maybeSingle ? await supabase.from('users').select('*').eq('username', cleanUser).eq('password', cleanPass).maybeSingle() : { data: null }; // Mock fallback
-
-        // Mock Adapter Logic (remover em produção se usar Auth real)
-        let userFound = data;
-        if(!userFound && supabase.auth) {
-             // Fallback para Mock Auth se a tabela falhar ou for mock
-             const authRes = await supabase.auth.signInWithPassword({ email: cleanUser, password: cleanPass });
-             if(authRes.user) userFound = authRes.user;
-        }
-
-        if (userFound) {
-             onLogin({ id: userFound.id, email: userFound.username || userFound.email, role: 'rep', name: userFound.name });
+            .maybeSingle(); 
+        
+        if (error) {
+            console.error('Erro Login:', error);
+            setError('Erro de conexão ou dados inválidos.');
+        } else if (data) {
+            onLogin({ id: data.id, email: data.username, role: 'rep', name: data.name });
         } else {
-             setError('Usuário ou senha incorretos.');
+            setError('Usuário ou senha incorretos.');
         }
 
     } catch (e) {
-        setError('Erro inesperado. Verifique sua conexão.');
+        setError('Erro inesperado.');
         console.error(e);
     } finally {
         setIsLoading(false);
@@ -166,21 +156,24 @@ const DashboardStats = ({ orders, title }) => {
     const refColors = {}; 
 
     orders.forEach(order => {
-      const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-
-      if(Array.isArray(items)){
-          items.forEach(item => {
-            const itemTotal = Object.values(item.qtd).reduce((a, b) => a + Number(b), 0);
-            totalItems += itemTotal;
-            
-            if (!refSales[item.ref]) refSales[item.ref] = 0;
-            refSales[item.ref] += itemTotal;
-
-            const key = `${item.ref} - ${item.color}`;
-            if (!refColors[key]) refColors[key] = 0;
-            refColors[key] += itemTotal;
-          });
+      // Parse seguro dos itens
+      let items = [];
+      if (Array.isArray(order.items)) items = order.items;
+      else if (typeof order.items === 'string') {
+          try { items = JSON.parse(order.items); } catch(e) { items = []; }
       }
+
+      items.forEach(item => {
+        const itemTotal = Object.values(item.qtd || {}).reduce((a, b) => a + Number(b), 0);
+        totalItems += itemTotal;
+        
+        if (!refSales[item.ref]) refSales[item.ref] = 0;
+        refSales[item.ref] += itemTotal;
+
+        const key = `${item.ref} - ${item.color}`;
+        if (!refColors[key]) refColors[key] = 0;
+        refColors[key] += itemTotal;
+      });
     });
 
     const topRefs = Object.entries(refSales)
@@ -296,11 +289,15 @@ const AdminDashboard = () => {
     setProducts(productsData || []);
 
     const { data: ordersData } = await supabase.from('orders').select('*');
-    // Converte o JSONB de items para objeto JS
-    const parsedOrders = (ordersData || []).map(order => ({
-        ...order,
-        items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
-    }));
+    // Normaliza items
+    const parsedOrders = (ordersData || []).map(order => {
+        let items = [];
+        if(Array.isArray(order.items)) items = order.items;
+        else if(typeof order.items === 'string') {
+            try { items = JSON.parse(order.items); } catch(e){ items = []; }
+        }
+        return { ...order, items };
+    });
     setOrders(parsedOrders);
   }, []);
 
@@ -313,7 +310,8 @@ const AdminDashboard = () => {
   const addUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) return alert('Preencha todos os campos');
     
-    const { data: existing } = await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle ? await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle() : {data: null}; // Mock safe
+    // Verifica se usuário já existe
+    const { data: existing } = await supabase.from('users').select('id').eq('username', newUser.username).maybeSingle();
     if (existing) return alert('Erro: Este nome de usuário já existe.');
 
     const { error } = await supabase.from('users').insert(newUser);
@@ -379,7 +377,7 @@ const AdminDashboard = () => {
               o.items.forEach(i => {
                   if(i.ref === reportRef) {
                       if(!stats[i.color]) stats[i.color] = 0;
-                      stats[i.color] += Object.values(i.qtd).reduce((a,b)=>a+Number(b),0);
+                      stats[i.color] += Object.values(i.qtd || {}).reduce((a,b)=>a+Number(b),0);
                   }
               });
           }
@@ -387,14 +385,16 @@ const AdminDashboard = () => {
       return Object.entries(stats).sort(([,a], [,b]) => b - a);
   }, [orders, reportRef]);
 
+  // --- FIX RELATÓRIO POR DATA ---
+  // Agora usando comparação de string (YYYY-MM-DD) para ignorar fuso horário e horas
   const dateRangeConsolidated = useMemo(() => {
       if(!dateRange.start || !dateRange.end) return null;
-      const start = new Date(dateRange.start + 'T00:00:00');
-      const end = new Date(dateRange.end + 'T23:59:59');
       
       const filteredOrders = orders.filter(o => {
-          const d = new Date(o.createdAt);
-          return d >= start && d <= end;
+          if (!o.createdAt) return false;
+          // Pega apenas os primeiros 10 caracteres (YYYY-MM-DD) da string ISO vinda do Supabase
+          const orderDate = o.createdAt.substring(0, 10);
+          return orderDate >= dateRange.start && orderDate <= dateRange.end;
       });
 
       const consolidation = {}; 
@@ -405,11 +405,13 @@ const AdminDashboard = () => {
               if (!consolidation[key]) {
                 consolidation[key] = { ref: item.ref, color: item.color, sizes: { P:0, M:0, G:0, GG:0, G1:0, G2:0, G3:0 } };
               }
-              Object.keys(item.qtd).forEach(size => {
-                 if(consolidation[key].sizes[size] !== undefined) {
-                     consolidation[key].sizes[size] += Number(item.qtd[size]);
-                 }
-              });
+              if (item.qtd) {
+                  Object.keys(item.qtd).forEach(size => {
+                     if(consolidation[key].sizes[size] !== undefined) {
+                         consolidation[key].sizes[size] += Number(item.qtd[size]);
+                     }
+                  });
+              }
             });
         }
       });
@@ -452,7 +454,6 @@ const AdminDashboard = () => {
                   </button>
                 </div>
               ))}
-              {users.length === 0 && <p className="text-gray-400">Nenhum representante.</p>}
             </div>
           </Card>
         </div>
@@ -686,7 +687,7 @@ const AdminDashboard = () => {
                               </tbody>
                           </table>
                       </div>
-                  ) : <p className="text-gray-400 text-center py-4">Selecione as datas.</p>}
+                  ) : <p className="text-gray-400 text-center py-4">Selecione as datas para gerar o relatório.</p>}
               </Card>
           </div>
       )}
@@ -968,7 +969,7 @@ const App = () => {
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
       <div className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center print:hidden sticky top-0 z-50">
-        <div className="flex items-center gap-2"><Package className="text-blue-400"/><h1 className="font-bold text-xl tracking-tight hidden md:block">Confecção Manager</h1></div>
+        <div className="flex items-center gap-2"><Package className="text-blue-400"/><h1 className="font-bold text-xl tracking-tight hidden md:block">Confecção Manager (Supabase Ready)</h1></div>
         <div className="flex items-center gap-4"><span className="text-sm text-gray-300">Olá, <strong className="text-white">{user.name}</strong></span><button onClick={handleLogout} className="p-2 bg-slate-800 rounded hover:bg-slate-700 transition-colors" title="Sair"><LogOut size={18}/></button></div>
       </div>
       <main className="pb-20 pt-6">
