@@ -20,7 +20,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // 1. Descomente a linha abaixo.
 // 2. Comente ou apague o bloco da "OPÇÃO B".
 
-// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
 
@@ -688,3 +688,4 @@ const App = () => {
 };
 
 export default App;
+
