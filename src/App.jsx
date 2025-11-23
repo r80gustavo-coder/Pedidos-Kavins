@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
- import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
@@ -16,65 +16,11 @@ import {
 const SUPABASE_URL = 'https://ljcnefiyllzuzetxkipp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY25lZml5bGx6dXpldHhraXBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3OTE0MzYsImV4cCI6MjA3OTM2NzQzNn0.oQP37ncyfVDcHpuIMUC39-PRlRy1f4_U7oyb3cxvQI4'; 
 
-// --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
+// --- OPÇÃO A: MODO PRODUÇÃO (Para Vercel/Supabase Real) ---
+// 1. Descomente a linha do 'createClient' abaixo.
+// 2. Comente ou apague todo o bloco da OPÇÃO B (Mock).
+
  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-
-// --- MODO SIMULAÇÃO (PARA NÃO DAR ERRO AQUI NO CHAT) ---
-// COMENTE OU APAGUE ESTE BLOCO INTEIRO QUANDO FOR SUBIR PARA O VERCEL
-// const supabase = {
-//    from: (table) => ({
-//        select: async (query = '*') => {
-//            console.warn(`[MOCK] Select em ${table}`);
-//            return { data: JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]'), error: null };
-//        },
-//        insert: async (records) => {
-//            console.warn(`[MOCK] Insert em ${table}`);
-//            const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
-//            const newRecords = Array.isArray(records) ? records : [records];
-//            const processed = newRecords.map(r => ({ ...r, id: r.id || crypto.randomUUID() }));
-//            localStorage.setItem(`temp_conf_${table}`, JSON.stringify([...current, ...processed]));
-//            return { data: processed, error: null };
-//        },
-//        update: async (changes) => {
-//             return {
-//                 eq: async (col, val) => {
-//                    console.warn(`[MOCK] Update em ${table}`);
-//                    const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
-//                    const updated = current.map(item => item[col] === val ? { ...item, ...changes } : item);
-//                    localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
-//                    return { data: updated, error: null };
-//                }
- //            }
- //       },
- //       delete: async () => {
- //           return {
- //               eq: async (col, val) => {
- //                   console.warn(`[MOCK] Delete em ${table}`);
- //                   const current = JSON.parse(localStorage.getItem(`temp_conf_${table}`) || '[]');
- //                   const updated = current.filter(item => item[col] !== val);
- //                   localStorage.setItem(`temp_conf_${table}`, JSON.stringify(updated));
- //                   return { data: null, error: null };
- //               }
- //           }
- //       }
- //   }),
- //   auth: {
- //       signInWithPassword: async ({ email, password }) => {
- //           // Simula login do Admin
- //           if (email === 'gustavo_benvindo80@hotmail.com' && password === 'Gustavor80') {
- //               return { user: { id: 'admin-id', email, role: 'admin', name: 'Gustavo Admin' }, error: null };
- //           }
- //           // Simula login do Rep buscando no mock users
- //           const allUsers = JSON.parse(localStorage.getItem('temp_conf_users') || '[]');
- //           const user = allUsers.find(u => u.username === email && u.password === password);
- //           if (user) return { user: { id: user.id, email: user.username, role: 'rep', name: user.name }, error: null };
- //           return { user: null, error: { message: 'Credenciais inválidas (MOCK)' } };
-        }
-    }
-};
-// --- FIM DO BLOCO MOCK ---
-
 
 // =========================================================
 // --- 2. CONSTANTES ---
@@ -341,6 +287,7 @@ const AdminDashboard = () => {
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [newProd, setNewProd] = useState({ ref: '', color: '', grade: 'STD' });
 
+  // --- Carregamento de Dados (SUPABASE) ---
   const fetchAllData = useCallback(async () => {
     const { data: usersData } = await supabase.from('users').select('*');
     setUsers(usersData || []);
@@ -349,6 +296,7 @@ const AdminDashboard = () => {
     setProducts(productsData || []);
 
     const { data: ordersData } = await supabase.from('orders').select('*');
+    // Converte o JSONB de items para objeto JS
     const parsedOrders = (ordersData || []).map(order => ({
         ...order,
         items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
@@ -361,6 +309,7 @@ const AdminDashboard = () => {
   }, [fetchAllData, view]);
 
 
+  // --- Ações do Admin ---
   const addUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) return alert('Preencha todos os campos');
     
@@ -421,6 +370,7 @@ const AdminDashboard = () => {
     fetchAllData();
   };
 
+  // --- Relatórios ---
   const refAnalysis = useMemo(() => {
       if(!reportRef) return [];
       const stats = {};
@@ -1029,7 +979,3 @@ const App = () => {
 };
 
 export default App;
-
-
-
-
