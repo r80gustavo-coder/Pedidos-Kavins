@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // --- PARA VERCEL (PRODUÇÃO): DESCOMENTE A LINHA ABAIXO ---
-// import { createClient } from '@supabase/supabase-js';
+ import { createClient } from '@supabase/supabase-js';
 
 import { 
   Users, Package, ShoppingCart, BarChart3, LogOut, Plus, Trash2, 
@@ -739,3 +739,4 @@ const App = () => {
 };
 
 export default App;
+
